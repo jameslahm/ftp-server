@@ -1,2 +1,8 @@
-server: server.c
-	gcc -o server server.c
+SOURCE=$(wildcard *.c)
+
+server: $(SOURCE)
+	gcc -o $@ $^ -lrt -Wall
+
+
+clean:
+	rm server

@@ -1,21 +1,21 @@
-#include <stdlib.h>
 #include "client.h"
-#include <stdio.h>
 
+struct Data_Conn DEFAULT_DATA_CONN = {NULL, -1, -1, PORT, NULL, READ};
+struct Client DEFAULT_CLIENT = {NULL, NULL, NULL, -1, NULL};
 // default alloc client nums
-static int DEFAULT_CLIENT_ALLOC_SIZE = 10;
+int DEFAULT_CLIENT_ALLOC_SIZE = 10;
 // clients size
-static int clients_size = 0;
+int clients_size = 0;
 
-void client_alloc(Client *clients)
+struct Client *client_alloc(struct Client *clients)
 {
     if (clients == NULL)
     {
-        clients = malloc(DEFAULT_CLIENT_ALLOC_SIZE * sizeof(Client));
+        clients = (struct Client *)malloc(DEFAULT_CLIENT_ALLOC_SIZE * sizeof(struct Client));
     }
     else
     {
-        clients = realloc(clients, (clients_size + DEFAULT_CLIENT_ALLOC_SIZE) * sizeof(Client));
+        clients = (struct Client *)realloc(clients, (clients_size + DEFAULT_CLIENT_ALLOC_SIZE) * sizeof(struct Client));
     }
     if (clients == NULL)
     {
@@ -26,34 +26,40 @@ void client_alloc(Client *clients)
         clients[i] = DEFAULT_CLIENT;
     }
     clients_size += DEFAULT_CLIENT_ALLOC_SIZE;
+    return clients;
 }
 
-int client_add(Client *clients, int socket_fd)
+int client_add(struct Server_RC *server_rc, int socket_fd)
 {
-    if (clients == NULL)
+    if (server_rc->clients == NULL)
     {
-        client_alloc(clients);
+        server_rc->clients = client_alloc(server_rc->clients);
     }
     int i;
     for (i = 0; i < clients_size; i++)
     {
-        if (clients[i].socket_fd == -1)
+        if (server_rc->clients[i].socket_fd == -1)
         {
-            clients[i].socket_fd = socket_fd;
-            clients[i].client_id = i;
+            server_rc->clients[i].socket_fd = socket_fd;
             return i;
         }
     }
-    client_alloc(clients);
-    clients[i].socket_fd = socket_fd;
-    clients[i].client_id = i;
+    server_rc->clients = client_alloc(server_rc->clients);
+    server_rc->clients[i].socket_fd = socket_fd;
     return i;
 }
 
-void client_del(Client *clients, ClientId client_id)
+void client_del(struct Client *clients, ClientId client_id)
 {
     clients[client_id].socket_fd = -1;
     free(clients[client_id].user);
     clients[client_id].user = NULL;
     return;
+}
+
+void client_data_conn_del(struct Client *client)
+{
+    free(client->data_conn->addr);
+    free(client->data_conn);
+    client->data_conn = NULL;
 }

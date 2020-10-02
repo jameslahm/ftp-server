@@ -1,94 +1,200 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
-
-#include <unistd.h>
-#include <errno.h>
-
-#include <ctype.h>
-#include <string.h>
-#include <memory.h>
 #include <stdio.h>
+#include <getopt.h>
+#include <limits.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
 
-int main(int argc, char **argv) {
-	int listenfd, connfd;		//监听socket和连接socket不一样，后者用于数据传输
+#include "client.h"
+#include "handle.h"
+#include "response.h"
+#include "log.h"
+
+#define MAXLINE 4096
+
+int main(int argc, char **argv)
+{
+	// clients
+	Client *clients = NULL;
+
+	// command responses
+	CommandResponse *cmd_responses = NULL;
+
+	// default root dir: /tmp
+	char *rootDir = "/tmp";
+
+	// default port: 12345
+	int port = 12345;
+
+	// buf
+	char buf[MAXLINE];
+
+	// get options include port and root dir
+	struct option long_options[] =
+		{
+			{"root", required_argument, NULL, 'r'},
+			{"port", required_argument, NULL, 'p'},
+			{0, 0, 0, 0}};
+
+	int arg;
+	int option_index = 0;
+	while ((arg = getopt_long(argc, argv, ":r:p:", long_options, &option_index)) != -1)
+	{
+		switch (arg)
+		{
+		case 'r':
+		{
+			rootDir = optarg;
+			break;
+		}
+		case 'p':
+		{
+			sscanf(optarg, "%d", &port);
+			break;
+		}
+		case ':':
+		{
+			printf("%s need a value", long_options[option_index].name);
+			break;
+		}
+		case '?':
+		{
+			printf("Unknown option\n");
+		}
+		default:
+		{
+			break;
+		}
+		}
+	}
+
+	log_info("Set rootDir to %s...\n", rootDir);
+	log_info("Set port to %d...\n", port);
+
+	// listen socket
+	int listenfd;
 	struct sockaddr_in addr;
-	char sentence[8192];
-	int p;
-	int len;
 
-	//创建socket
-	if ((listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
-		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
+	if ((listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
+	{
+
 		return 1;
 	}
 
-	//设置本机的ip和port
+	// set socket addr
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
-	addr.sin_port = 6789;
-	addr.sin_addr.s_addr = htonl(INADDR_ANY);	//监听"0.0.0.0"
+	addr.sin_port = htons(port);
+	addr.sin_addr.s_addr = htonl(INADDR_ANY); //监听"0.0.0.0"
 
-	//将本机的ip和port与socket绑定
-	if (bind(listenfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-		printf("Error bind(): %s(%d)\n", strerror(errno), errno);
+	// bind socket
+	if (bind(listenfd, (struct sockaddr *)&addr, sizeof(addr)) == -1)
+	{
+		log_error("bind: %s", strerror(errno));
 		return 1;
 	}
 
-	//开始监听socket
-	if (listen(listenfd, 10) == -1) {
-		printf("Error listen(): %s(%d)\n", strerror(errno), errno);
+	if (listen(listenfd, 10) == -1)
+	{
+		log_error("listen: %s", strerror(errno));
 		return 1;
 	}
 
-	//持续监听连接请求
-	while (1) {
-		//等待client的连接 -- 阻塞函数
-		if ((connfd = accept(listenfd, NULL, NULL)) == -1) {
-			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
+	int n, clifd, i, nread;
+	int maxi = -1;
+	int maxfd = listenfd;
+	fd_set rset, all_rset, wset, all_wset;
+	FD_ZERO(&all_rset);
+	FD_ZERO(&all_wset);
+	FD_SET(listenfd, &all_rset);
+	struct timeval timeout = {0, 0};
+
+	while (1)
+	{
+		// Check read socket
+		rset = all_rset;
+		wset = all_wset;
+		if ((n = select(maxfd + 1, &rset, &wset, NULL, &timeout)) < 0)
+		{
+			log_err("select: %s", strerror(errno));
+		}
+
+		if (FD_ISSET(listenfd, &rset))
+		{
+			// accept socket connection
+			if ((clifd = accept(listenfd, NULL, NULL)) < 0)
+			{
+				log_err("accept: %s", strerror(errno));
+			}
+
+			// add client
+			i = client_add(clients, clifd);
+
+			// add clifd to all_rset
+			FD_SET(clifd, &all_rset);
+
+			// add clifd to all_wset
+			if (clifd > maxfd)
+			{
+				maxfd = clifd;
+			}
+			if (i > maxi)
+			{
+				maxi = i;
+			}
+			log_info("new connection %d", clifd);
+
+			// add cmd response
+			make_response(cmd_responses, i, 220, "ftp.ssast.org FTP server ready");
+
+			// add clifd to all_wset
+			FD_SET(clifd, &all_wset);
 			continue;
 		}
-		
-		//榨干socket传来的内容
-		p = 0;
-		while (1) {
-			int n = read(connfd, sentence + p, 8191 - p);
-			if (n < 0) {
-				printf("Error read(): %s(%d)\n", strerror(errno), errno);
-				close(connfd);
+
+		// check client can read
+		for (i = 0; i <= maxi; i++)
+		{
+			if ((clifd = clients[i].socket_fd) < 0)
+			{
 				continue;
-			} else if (n == 0) {
-				break;
-			} else {
-				p += n;
-				if (sentence[p - 1] == '\n') {
-					break;
+			}
+			if (FD_ISSET(clifd, &rset))
+			{
+				if ((nread = read(clifd, buf, MAXLINE)) < 0)
+				{
+					printf("Error read: %d", clifd);
+				}
+				// client close
+				else if (nread == 0)
+				{
+					client_del(clients, i);
+					FD_CLR(clifd, &all_rset);
+					close(clifd);
+				}
+				else
+				{
+					handle_command(&clients[i], buf, nread);
 				}
 			}
 		}
-		//socket接收到的字符串并不会添加'\0'
-		sentence[p - 1] = '\0';
-		len = p - 1;
-		
-		//字符串处理
-		for (p = 0; p < len; p++) {
-			sentence[p] = toupper(sentence[p]);
+
+		// check client can write
+		for (i = 0; i < cmd_responses; i++)
+		{
+			ClientId client_id = cmd_responses[i].client_id;
+			int socket_fd = clients[client_id].socket_fd;
+			if (FD_ISSET(socket_fd, &wset))
+			{
+				// write socket
+				write(socket_fd, cmd_responses[i].message, strlen(cmd_responses[i].message));
+			}
 		}
 
-		//发送字符串到socket
- 		p = 0;
-		while (p < len) {
-			int n = write(connfd, sentence + p, len + 1 - p);
-			if (n < 0) {
-				printf("Error write(): %s(%d)\n", strerror(errno), errno);
-				return 1;
-	 		} else {
-				p += n;
-			}			
-		}
-
-		close(connfd);
+		// check file read complete
 	}
 
 	close(listenfd);
 }
-

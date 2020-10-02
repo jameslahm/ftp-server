@@ -94,7 +94,7 @@ int handle_read(struct Client *client, struct Server_RC *server_rc)
     write(data_conn->clifd, (char *)data_conn->acb->aio_buf, nread);
     if (nread == data_conn->acb->aio_nbytes)
     {
-        data_conn->acb->aio_offset += data_conn->acb->aio_offset + nread;
+        data_conn->acb->aio_offset +=nread;
         aio_read(data_conn->acb);
     }
     else
@@ -259,7 +259,7 @@ struct CommandResponse *handle_command(struct Client *client, char *buf, struct 
         return make_response(227, buf);
     }
 
-    if (strcmp(cmd->type, "RETR") == 0 || strcmp(cmd->type, "PASV"))
+    if (strcmp(cmd->type, "RETR") == 0 || strcmp(cmd->type, "STOR") == 0)
     {
         bool is_retr = strcmp(cmd->type, "RETR") == 0 ? true : false;
         client->data_conn->status = is_retr ? READ : WRITE;
@@ -329,46 +329,6 @@ struct CommandResponse *handle_command(struct Client *client, char *buf, struct 
             }
 
             FD_SET(client->data_conn->clifd, is_retr ? &server_rc->all_wset : &server_rc->all_rset);
-            FD_SET(client->socket_fd, &server_rc->all_wset);
-            return make_response(150, "Opening Binary mode data connection\r\n");
-        }
-        if (client->data_conn->mode == PASV)
-        {
-            FD_SET(client->data_conn->listenfd, &server_rc->all_rset);
-            FD_SET(client->socket_fd, &server_rc->all_wset);
-            return make_response(150, "Opening Binary mode data connection\r\n");
-        }
-    };
-
-    if (strcmp(cmd->type, "STOR") == 0)
-    {
-        client->data_conn->status = WRITE;
-
-        int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 2;
-        char *filename = (char *)malloc(filename_length);
-        bzero(filename, filename_length);
-        snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
-        struct aiocb *acb = (struct aiocb *)malloc(sizeof(struct aiocb));
-        bzero(acb, sizeof(*acb));
-        int fd = open(filename, O_WRONLY | O_APPEND | O_CREAT);
-        acb->aio_fildes = fd;
-        acb->aio_buf = (char *)malloc(BUFSIZ + 1);
-        acb->aio_nbytes = 0;
-
-        client->data_conn->acb = acb;
-        aio_write(acb);
-        if (client->data_conn->mode == PORT)
-        {
-            client->data_conn->clifd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-            if (client->data_conn->listenfd > server_rc->maxfd)
-            {
-                server_rc->maxfd = client->data_conn->listenfd;
-            }
-            int flags = fcntl(client->data_conn->clifd, F_GETFL, 0);
-            fcntl(client->data_conn->clifd, F_SETFL, flags | O_NONBLOCK);
-
-            connect(client->data_conn->clifd, (struct sockaddr *)client->data_conn->addr, sizeof(struct sockaddr_in));
-            FD_SET(client->data_conn->clifd, &server_rc->all_rset);
             FD_SET(client->socket_fd, &server_rc->all_wset);
             return make_response(150, "Opening Binary mode data connection\r\n");
         }

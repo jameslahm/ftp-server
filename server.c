@@ -110,7 +110,7 @@ int main(int argc, char **argv)
 		log_info("select fds (maxfd: %d)", server_rc.maxfd);
 
 		int n;
-		if ((n = select(server_rc.maxfd + 1, &rset, &wset, NULL, &timeout)) < 0)
+		if ((n = select(server_rc.maxfd + 1, &rset, &wset, NULL, NULL)) < 0)
 		{
 			log_error("select: %s", strerror(errno));
 		}
@@ -264,6 +264,10 @@ int main(int argc, char **argv)
 				{
 					data_conn->clifd = accept(data_conn->listenfd, NULL, NULL);
 					FD_CLR(data_conn->listenfd, &server_rc.all_rset);
+					if (server_rc.maxfd < data_conn->clifd)
+					{
+						server_rc.maxfd = data_conn->clifd;
+					}
 					if (data_conn->status == READ)
 					{
 						FD_SET(data_conn->clifd, &server_rc.all_wset);

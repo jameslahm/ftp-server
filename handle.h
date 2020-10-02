@@ -6,11 +6,11 @@
 typedef struct
 {
     // command type
-    char code;
+    char *type;
     // command args
-    char *buf;
+    char *args;
 } Command;
 
-void handle_command(Client *client, char *buf, int nread);
+CommandResponse *handle_command(Client *client, char *buf);
 
 #endif

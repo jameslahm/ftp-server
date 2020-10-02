@@ -12,8 +12,6 @@
 #include "response.h"
 #include "log.h"
 
-#define MAXLINE 4096
-
 int main(int argc, char **argv)
 {
 	// clients
@@ -87,7 +85,7 @@ int main(int argc, char **argv)
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(port);
-	addr.sin_addr.s_addr = htonl(INADDR_ANY); //监听"0.0.0.0"
+	addr.sin_addr.s_addr = htonl(INADDR_ANY); 
 
 	// bind socket
 	if (bind(listenfd, (struct sockaddr *)&addr, sizeof(addr)) == -1)
@@ -103,7 +101,8 @@ int main(int argc, char **argv)
 	}
 
 	int n, clifd, i, nread;
-	int maxi = -1;
+	int max_client_id = -1;
+	int max_cmd_response_id = -1;
 	int maxfd = listenfd;
 	fd_set rset, all_rset, wset, all_wset;
 	FD_ZERO(&all_rset);
@@ -140,14 +139,19 @@ int main(int argc, char **argv)
 			{
 				maxfd = clifd;
 			}
-			if (i > maxi)
+			if (i > max_client_id)
 			{
-				maxi = i;
+				max_client_id = i;
 			}
 			log_info("new connection %d", clifd);
 
 			// add cmd response
-			make_response(cmd_responses, i, 220, "ftp.ssast.org FTP server ready");
+			CommandResponse *cmd_response = make_response(i, 220, "ftp.ssast.org FTP server ready");
+			int cmd_response_id = cmd_response_add(cmd_responses, cmd_response);
+			if (cmd_response_id > max_cmd_response_id)
+			{
+				max_cmd_response_id = cmd_response_id;
+			}
 
 			// add clifd to all_wset
 			FD_SET(clifd, &all_wset);
@@ -155,7 +159,7 @@ int main(int argc, char **argv)
 		}
 
 		// check client can read
-		for (i = 0; i <= maxi; i++)
+		for (i = 0; i <= max_client_id; i++)
 		{
 			if ((clifd = clients[i].socket_fd) < 0)
 			{
@@ -176,13 +180,19 @@ int main(int argc, char **argv)
 				}
 				else
 				{
-					handle_command(&clients[i], buf, nread);
+					buf[nread] = '\0';
+					CommandResponse *cmd_response = handle_command(&clients[i], buf);
+					int cmd_response_id = cmd_response_add(cmd_responses, cmd_response);
+					if (cmd_response_id > max_cmd_response_id)
+					{
+						max_cmd_response_id = cmd_response_id;
+					}
 				}
 			}
 		}
 
 		// check client can write
-		for (i = 0; i < cmd_responses; i++)
+		for (i = 0; i < max_cmd_response_id; i++)
 		{
 			ClientId client_id = cmd_responses[i].client_id;
 			int socket_fd = clients[client_id].socket_fd;
@@ -190,6 +200,7 @@ int main(int argc, char **argv)
 			{
 				// write socket
 				write(socket_fd, cmd_responses[i].message, strlen(cmd_responses[i].message));
+				cmd_response_del(cmd_responses, i);
 			}
 		}
 

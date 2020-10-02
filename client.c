@@ -40,11 +40,13 @@ int client_add(Client *clients, int socket_fd)
         if (clients[i].socket_fd == -1)
         {
             clients[i].socket_fd = socket_fd;
+            clients[i].client_id = i;
             return i;
         }
     }
     client_alloc(clients);
     clients[i].socket_fd = socket_fd;
+    clients[i].client_id = i;
     return i;
 }
 

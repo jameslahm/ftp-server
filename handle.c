@@ -1,5 +1,35 @@
 #include "handle.h"
 
+void init_data_conn(struct Client *client, struct Server_RC *server_rc)
+{
+    struct Data_Conn *data_conn = client->data_conn;
+    if (data_conn == NULL)
+    {
+        return;
+    }
+    if (data_conn->addr != NULL)
+    {
+        free(data_conn->addr);
+    }
+    if (data_conn->acb != NULL)
+    {
+        free(data_conn->acb);
+    }
+    if (data_conn->clifd != -1)
+    {
+        FD_CLR(data_conn->clifd, &server_rc->all_rset);
+        FD_CLR(data_conn->clifd, &server_rc->all_wset);
+        close(data_conn->clifd);
+    }
+    if (data_conn->listenfd != -1)
+    {
+        FD_CLR(data_conn->listenfd, &server_rc->all_rset);
+        FD_CLR(data_conn->listenfd, &server_rc->all_wset);
+        close(data_conn->listenfd);
+    }
+    free(data_conn);
+    client->data_conn = NULL;
+}
 
 Command *parse_command(char *buf)
 {
@@ -28,6 +58,9 @@ void parse_address(char *args, char *ip, int *port)
     snprintf(ip, IP_LENGTH, "%s.%s.%s.%s", ip_1, ip_2, ip_3, ip_4);
 
     *port = 256 * port_1 + port_2;
+
+    log_info("parse ip: %s", ip);
+    log_info("parse port: %d", *port);
 }
 
 char *stringify_address(struct sockaddr_in *addr)
@@ -43,6 +76,7 @@ char *stringify_address(struct sockaddr_in *addr)
         {
             ip[i] = ',';
         }
+        i++;
     }
     int port = ntohs(addr->sin_port);
     int port_1 = port / 256;
@@ -53,7 +87,7 @@ char *stringify_address(struct sockaddr_in *addr)
     return buf;
 }
 
-void handle_read(struct Client *client, struct Server_RC *server_rc)
+int handle_read(struct Client *client, struct Server_RC *server_rc)
 {
     struct Data_Conn *data_conn = client->data_conn;
     int nread = aio_return(data_conn->acb);
@@ -65,14 +99,17 @@ void handle_read(struct Client *client, struct Server_RC *server_rc)
     }
     else
     {
+        FD_CLR(data_conn->clifd, &server_rc->all_wset);
         close(data_conn->clifd);
+        data_conn->clifd = -1;
         free(data_conn->acb);
         client->cmd_response = make_response(226, "Transfer complete\r\n");
         FD_SET(client->socket_fd, &server_rc->all_wset);
     }
+    return nread;
 }
 
-void handle_write(struct Client *client, struct Server_RC *server_rc)
+int handle_write(struct Client *client, struct Server_RC *server_rc)
 {
     struct Data_Conn *data_conn = client->data_conn;
     aio_return(data_conn->acb);
@@ -80,7 +117,9 @@ void handle_write(struct Client *client, struct Server_RC *server_rc)
     int nwrite = read(data_conn->clifd, (char *)data_conn->acb->aio_buf, data_conn->acb->aio_nbytes);
     if (nwrite == 0)
     {
+        FD_CLR(data_conn->clifd, &server_rc->all_rset);
         close(data_conn->clifd);
+        data_conn->clifd = -1;
         free(data_conn->acb);
         client->cmd_response = make_response(226, "Transfer complete\r\n");
         FD_SET(client->socket_fd, &server_rc->all_wset);
@@ -90,11 +129,15 @@ void handle_write(struct Client *client, struct Server_RC *server_rc)
         data_conn->acb->aio_nbytes = nwrite;
         aio_write(data_conn->acb);
     }
+    return nwrite;
 }
 
 struct CommandResponse *handle_command(struct Client *client, char *buf, struct Server_RC *server_rc)
 {
     Command *cmd = parse_command(buf);
+
+    log_info("command type: %s", cmd->type);
+    log_info("command args: %s", cmd->args);
 
     // handle User command
     if (strcmp(cmd->type, "USER") == 0)
@@ -106,6 +149,8 @@ struct CommandResponse *handle_command(struct Client *client, char *buf, struct 
             bzero(user->username, strlen(cmd->args) + 1);
             strncpy(user->username, cmd->args, strlen(cmd->args));
             client->user = user;
+
+            FD_SET(client->socket_fd, &server_rc->all_wset);
             return make_response(331, "Guest login ok,send your complete e-mail address as password\r\n");
         }
     }
@@ -118,37 +163,40 @@ struct CommandResponse *handle_command(struct Client *client, char *buf, struct 
         bzero(user->password, strlen(cmd->args) + 1);
         strncpy(user->password, cmd->args, strlen(cmd->args));
         char message[][MAXLINE] = {
-            "\r\n"
-            "Welcome to",
-            "School of Software",
-            "FTP Archives at ftp.ssast.org",
+            "\r\n",
+            "Welcome to\r\n",
+            "School of Software\r\n",
+            "FTP Archives at ftp.ssast.org\r\n",
             "\r\n",
             "This site is provided as a public service by School of\r\n",
             "Software. Use in violation of any applicable laws is strictly\r\n",
             "prohibited. We make no guarantees, explicit or implicit, about the\r\n",
             "contents of this site. Use at your own risk.\r\n",
             "\r\n",
-            "Guest login ok, access restrictions apply.\r\n"
+            "Guest login ok, access restrictions apply.\r\n",
             "\0"};
+        FD_SET(client->socket_fd, &server_rc->all_wset);
         return make_multiline_response(230, message);
     }
 
     if (strcmp(cmd->type, "SYST") == 0)
     {
-        return make_response(215, "UNIX Type: I\r\n");
+        FD_SET(client->socket_fd, &server_rc->all_wset);
+        return make_response(215, "UNIX Type: L8\r\n");
     }
 
     if (strcmp(cmd->type, "TYPE") == 0)
     {
         if (strcmp(cmd->args, "I") == 0)
         {
-            return make_response(200, "Type set to I\r\n");
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            return make_response(200, "Type set to I.\r\n");
         }
     }
 
     if (strcmp(cmd->type, "PORT") == 0)
     {
-        client_data_conn_del(client);
+        init_data_conn(client, server_rc);
 
         char *ip = (char *)malloc(sizeof(char) * IP_LENGTH);
         bzero(ip, sizeof(char) * IP_LENGTH);
@@ -167,12 +215,13 @@ struct CommandResponse *handle_command(struct Client *client, char *buf, struct 
         data_conn->addr = addr;
         data_conn->mode = PORT;
         client->data_conn = data_conn;
+        FD_SET(client->socket_fd, &server_rc->all_wset);
         return make_response(200, "PORT command successful\r\n");
     }
 
     if (strcmp(cmd->type, "PASV") == 0)
     {
-        client_data_conn_del(client);
+        init_data_conn(client, server_rc);
 
         struct sockaddr_in *addr = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
 
@@ -188,60 +237,106 @@ struct CommandResponse *handle_command(struct Client *client, char *buf, struct 
 
         data_conn->listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         bind(data_conn->listenfd, (struct sockaddr *)data_conn->addr, sizeof(struct sockaddr_in));
+        log_info("bind (%d)", data_conn->listenfd);
         listen(data_conn->listenfd, 10);
+        log_info("start listen (%d)", data_conn->listenfd);
         if (data_conn->listenfd > server_rc->maxfd)
         {
             server_rc->maxfd = data_conn->listenfd;
         }
 
         socklen_t sockaddr_in_length = sizeof(struct sockaddr_in);
+        log_info("get socket name");
         getsockname(data_conn->listenfd, (struct sockaddr *)data_conn->addr, &sockaddr_in_length);
+        client->data_conn = data_conn;
 
+        log_info("stringify address");
         char *address = stringify_address(data_conn->addr);
         char *buf = (char *)malloc(MAXLINE);
         snprintf(buf, MAXLINE, "Entering Passive Mode (%s)\r\n", address);
         free(address);
+        FD_SET(client->socket_fd, &server_rc->all_wset);
         return make_response(227, buf);
     }
 
-    if (strcmp(cmd->type, "RETR") == 0)
+    if (strcmp(cmd->type, "RETR") == 0 || strcmp(cmd->type, "PASV"))
     {
-        client->data_conn->status = READ;
-        int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 1;
-        char *filename = (char *)(malloc(strlen(client->current_dir) + strlen(cmd->args)) + 1);
-        bzero(filename, filename_length + 1);
+        bool is_retr = strcmp(cmd->type, "RETR") == 0 ? true : false;
+        client->data_conn->status = is_retr ? READ : WRITE;
+        int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 2;
+        char *filename = (char *)(malloc(filename_length));
+        bzero(filename, filename_length);
         snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
         struct aiocb *acb = (struct aiocb *)malloc(sizeof(struct aiocb));
         bzero(acb, sizeof(*acb));
-        int fd = open(filename, O_RDONLY);
-        acb->aio_fildes = fd;
+
         acb->aio_buf = (char *)malloc(BUFSIZ + 1);
-        acb->aio_offset = 0;
-        acb->aio_nbytes = BUFSIZ;
+
+        int fd;
+        if (is_retr)
+        {
+            fd = open(filename, O_RDONLY);
+            acb->aio_offset = 0;
+            acb->aio_nbytes = BUFSIZ;
+        }
+        else
+        {
+            fd = open(filename, O_WRONLY | O_APPEND | O_CREAT);
+            acb->aio_nbytes = 0;
+        }
+        acb->aio_fildes = fd;
 
         client->data_conn->acb = acb;
-        aio_read(acb);
+
+        if (is_retr)
+        {
+            log_info("start read %s", filename);
+            aio_read(acb);
+        }
+        else
+        {
+            log_info("start write %s", filename);
+            aio_write(acb);
+        }
 
         if (client->data_conn->mode == PORT)
         {
             client->data_conn->clifd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-            if (client->data_conn->listenfd > server_rc->maxfd)
+
+            if (client->data_conn->clifd > server_rc->maxfd)
             {
-                server_rc->maxfd = client->data_conn->listenfd;
+                server_rc->maxfd = client->data_conn->clifd;
             }
+
             int flags = fcntl(client->data_conn->clifd, F_GETFL, 0);
             fcntl(client->data_conn->clifd, F_SETFL, flags | O_NONBLOCK);
 
-            connect(client->data_conn->clifd, (struct sockaddr *)client->data_conn->addr, sizeof(struct sockaddr_in));
-            FD_SET(client->data_conn->clifd, &server_rc->all_wset);
-            // client->data_conn->filename = cmd->args;
-            return make_response(50, "Opening Binary mode data connection\r\n");
+            log_info("start connect %s:%d (%d)", inet_ntoa(client->data_conn->addr->sin_addr), ntohs(client->data_conn->addr->sin_port), client->data_conn->clifd);
+
+            int res = connect(client->data_conn->clifd, (struct sockaddr *)client->data_conn->addr, sizeof(struct sockaddr_in));
+
+            if (res == 0)
+            {
+                log_info("connect successfully");
+            }
+            else if (res < 0 && errno == EINPROGRESS)
+            {
+                log_info("connect in progress");
+            }
+            else
+            {
+                log_error("conect error: %s", strerror(errno));
+            }
+
+            FD_SET(client->data_conn->clifd, is_retr ? &server_rc->all_wset : &server_rc->all_rset);
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            return make_response(150, "Opening Binary mode data connection\r\n");
         }
         if (client->data_conn->mode == PASV)
         {
             FD_SET(client->data_conn->listenfd, &server_rc->all_rset);
-            // client->data_conn->filename = cmd->args;
-            return make_response(120, "Opening Binary mode data connection\r\n");
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            return make_response(150, "Opening Binary mode data connection\r\n");
         }
     };
 
@@ -249,9 +344,9 @@ struct CommandResponse *handle_command(struct Client *client, char *buf, struct 
     {
         client->data_conn->status = WRITE;
 
-        int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 1;
-        char *filename = (char *)(malloc(strlen(client->current_dir) + strlen(cmd->args)) + 1);
-        bzero(filename, filename_length + 1);
+        int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 2;
+        char *filename = (char *)malloc(filename_length);
+        bzero(filename, filename_length);
         snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
         struct aiocb *acb = (struct aiocb *)malloc(sizeof(struct aiocb));
         bzero(acb, sizeof(*acb));
@@ -274,16 +369,23 @@ struct CommandResponse *handle_command(struct Client *client, char *buf, struct 
 
             connect(client->data_conn->clifd, (struct sockaddr *)client->data_conn->addr, sizeof(struct sockaddr_in));
             FD_SET(client->data_conn->clifd, &server_rc->all_rset);
-            // client->data_conn->filename = cmd->args;
-            return make_response(50, "Opening Binary mode data connection\r\n");
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            return make_response(150, "Opening Binary mode data connection\r\n");
         }
         if (client->data_conn->mode == PASV)
         {
             FD_SET(client->data_conn->listenfd, &server_rc->all_rset);
-            // client->data_conn->filename = cmd->args;
-            return make_response(120, "Opening Binary mode data connection\r\n");
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            return make_response(150, "Opening Binary mode data connection\r\n");
         }
     };
+
+    if (strcmp(cmd->type, "QUIT") == 0)
+    {
+        FD_SET(client->socket_fd, &server_rc->all_wset);
+        FD_SET(client->socket_fd, &server_rc->all_rset);
+        return make_response(221, "Goodbye.\r\n");
+    }
     free(cmd->args);
     free(cmd->type);
     free(cmd);

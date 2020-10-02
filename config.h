@@ -7,10 +7,10 @@
 
 struct Server_RC
 {
-	char *root_dir;
-	int port;
-	fd_set all_rset;
-	fd_set all_wset;
-	int maxfd;
+    char *root_dir;
+    int port;
+    fd_set all_rset;
+    fd_set all_wset;
+    int maxfd;
     struct Client *clients;
 };

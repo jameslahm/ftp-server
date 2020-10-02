@@ -8,6 +8,9 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <aio.h>
+#include <sys/socket.h>
+#include <errno.h>
 
 #include "client.h"
 #include "response.h"
@@ -21,6 +24,6 @@ typedef struct
 } Command;
 
 struct CommandResponse *handle_command(struct Client *client, char *buf, struct Server_RC *server_rc);
-void handle_read(struct Client *client, struct Server_RC *server_rc);
+int handle_read(struct Client *client, struct Server_RC *server_rc);
 
-void handle_write(struct Client *client, struct Server_RC *server_rc);
+int handle_write(struct Client *client, struct Server_RC *server_rc);

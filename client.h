@@ -76,5 +76,3 @@ extern int clients_size;
 int client_add(struct Server_RC *server_rc, int socket_fd);
 
 void client_del(struct Client *clients, ClientId client_id);
-
-void client_data_conn_del(struct Client *client);

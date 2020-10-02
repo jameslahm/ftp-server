@@ -73,6 +73,9 @@ int main(int argc, char **argv)
 	addr.sin_port = htons(server_rc.port);
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
+	int reuse_addr_flag = 1;
+	setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr_flag, sizeof(reuse_addr_flag));
+
 	// bind socket
 	if (bind(listenfd, (struct sockaddr *)&addr, sizeof(addr)) == -1)
 	{
@@ -88,10 +91,8 @@ int main(int argc, char **argv)
 
 	log_info("listening...");
 
-	int n, clifd, i, nread;
 	int max_client_id = -1;
-	int maxfd = listenfd;
-
+	server_rc.maxfd = listenfd;
 	fd_set rset, wset;
 	FD_ZERO(&server_rc.all_rset);
 	FD_ZERO(&server_rc.all_wset);
@@ -106,9 +107,10 @@ int main(int argc, char **argv)
 		struct timeval timeout = {5, 0};
 
 		log_info("current clients: %d", max_client_id + 1);
-		log_info("select fds");
+		log_info("select fds (maxfd: %d)", server_rc.maxfd);
 
-		if ((n = select(maxfd + 1, &rset, &wset, NULL, &timeout)) < 0)
+		int n;
+		if ((n = select(server_rc.maxfd + 1, &rset, &wset, NULL, &timeout)) < 0)
 		{
 			log_error("select: %s", strerror(errno));
 		}
@@ -119,6 +121,7 @@ int main(int argc, char **argv)
 		if (FD_ISSET(listenfd, &rset))
 		{
 
+			int clifd;
 			// accept socket connection
 			if ((clifd = accept(listenfd, NULL, NULL)) < 0)
 			{
@@ -128,16 +131,16 @@ int main(int argc, char **argv)
 			// add client
 			log_info("add client %d", clifd);
 
-			i = client_add(&server_rc, clifd);
+			int i = client_add(&server_rc, clifd);
 			server_rc.clients[i].current_dir = server_rc.root_dir;
 
 			// add clifd to all_rset
 			FD_SET(clifd, &server_rc.all_rset);
 
 			// add clifd to all_wset
-			if (clifd > maxfd)
+			if (clifd > server_rc.maxfd)
 			{
-				maxfd = clifd;
+				server_rc.maxfd = clifd;
 			}
 			if (i > max_client_id)
 			{
@@ -145,7 +148,7 @@ int main(int argc, char **argv)
 			}
 
 			// add cmd response
-			struct CommandResponse *cmd_response = make_response(220, "ftp.ssast.org FTP server ready");
+			struct CommandResponse *cmd_response = make_response(220, "ftp.ssast.org FTP server ready\r\n");
 			server_rc.clients[i].cmd_response = cmd_response;
 
 			// add clifd to all_wset
@@ -156,8 +159,9 @@ int main(int argc, char **argv)
 		log_info("check clients command");
 
 		// check client command request and response
-		for (i = 0; i <= max_client_id; i++)
+		for (int i = 0; i <= max_client_id; i++)
 		{
+			int clifd;
 			if ((clifd = server_rc.clients[i].socket_fd) < 0)
 			{
 				continue;
@@ -166,6 +170,7 @@ int main(int argc, char **argv)
 			// check read
 			if (FD_ISSET(clifd, &rset))
 			{
+				int nread;
 				if ((nread = read(clifd, buf, MAXLINE)) < 0)
 				{
 					printf("Error read: %d", clifd);
@@ -174,6 +179,7 @@ int main(int argc, char **argv)
 				else if (nread == 0)
 				{
 					client_del(server_rc.clients, i);
+					log_info("delete client (%d)", i);
 					FD_CLR(clifd, &server_rc.all_rset);
 					close(clifd);
 				}
@@ -191,8 +197,15 @@ int main(int argc, char **argv)
 				struct CommandResponse *cmd_response = server_rc.clients[i].cmd_response;
 				if (cmd_response != NULL)
 				{
-					log_info("response command %s", cmd_response->message);
-					write(clifd, cmd_response->message, strlen(cmd_response->message));
+					int nwrite = write(clifd, cmd_response->message, strlen(cmd_response->message));
+					if (nwrite == strlen(cmd_response->message))
+					{
+						log_info("response cmd: \n%s", cmd_response->message);
+					}
+					else
+					{
+						log_error("response cmd: \n%s", strerror(errno));
+					}
 					free(cmd_response->message);
 					free(cmd_response);
 					server_rc.clients[i].cmd_response = NULL;
@@ -204,7 +217,7 @@ int main(int argc, char **argv)
 		log_info("check clients data connection");
 
 		// check client data connection
-		for (i = 0; i <= max_client_id; i++)
+		for (int i = 0; i <= max_client_id; i++)
 		{
 			struct Client *client = &server_rc.clients[i];
 			if (client->socket_fd < 0)
@@ -228,8 +241,8 @@ int main(int argc, char **argv)
 					}
 					else
 					{
-						log_info("data transfer to %d", client->socket_fd);
-						handle_read(client, &server_rc);
+						int nread = handle_read(client, &server_rc);
+						log_info("data transfer to %d (%d bytes)", client->socket_fd, nread);
 					}
 				};
 				if (FD_ISSET(data_conn->clifd, &rset))
@@ -240,8 +253,8 @@ int main(int argc, char **argv)
 					}
 					else
 					{
-						log_info("data transfer from %d", client->socket_fd);
-						handle_write(client, &server_rc);
+						int nwrite = handle_write(client, &server_rc);
+						log_info("data transfer from %d (%d bytes)", client->socket_fd, nwrite);
 					}
 				};
 			}
@@ -272,8 +285,8 @@ int main(int argc, char **argv)
 						}
 						else
 						{
-							log_info("data transfer to %d", client->socket_fd);
-							handle_read(client, &server_rc);
+							int nread = handle_read(client, &server_rc);
+							log_info("data transfer to %d (%d bytes)", client->socket_fd, nread);
 						}
 					}
 				}
@@ -287,13 +300,15 @@ int main(int argc, char **argv)
 						}
 						else
 						{
-							log_info("data transfer from %d", client->socket_fd);
-							handle_write(client, &server_rc);
+							int nwrite = handle_write(client, &server_rc);
+							log_info("data transfer from %d (%d bytes)", client->socket_fd, nwrite);
 						}
 					}
 				}
 			}
 		}
+
+		log_info("------\n");
 	}
 
 	close(listenfd);

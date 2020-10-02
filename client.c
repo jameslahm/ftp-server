@@ -56,10 +56,3 @@ void client_del(struct Client *clients, ClientId client_id)
     clients[client_id].user = NULL;
     return;
 }
-
-void client_data_conn_del(struct Client *client)
-{
-    free(client->data_conn->addr);
-    free(client->data_conn);
-    client->data_conn = NULL;
-}

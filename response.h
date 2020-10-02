@@ -5,5 +5,6 @@
 
 struct CommandResponse *make_response(int code, char *message);
 
-struct CommandResponse *make_multiline_response(int code, char message[][MAXLINE]);
+struct CommandResponse *make_mark_response(int code, char *message);
 
+struct CommandResponse *make_multiline_response(int code, char message[][MAXLINE]);

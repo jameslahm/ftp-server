@@ -2,3 +2,5 @@ test.py
 .vscode
 server
 *.data
+main.c
+main

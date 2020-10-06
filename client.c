@@ -1,7 +1,7 @@
 #include "client.h"
 
-struct Data_Conn DEFAULT_DATA_CONN = {NULL, -1, -1, PORT, NULL, READ};
-struct Client DEFAULT_CLIENT = {NULL, NULL, NULL, -1, NULL};
+struct Data_Conn DEFAULT_DATA_CONN = {NULL, -1, -1, PORT, NULL};
+struct Client DEFAULT_CLIENT = {NULL, NULL, NULL, -1, NULL, NULL, IDLE};
 // default alloc client nums
 int DEFAULT_CLIENT_ALLOC_SIZE = 10;
 // clients size
@@ -24,6 +24,9 @@ struct Client *client_alloc(struct Client *clients)
     for (int i = clients_size; i < clients_size + DEFAULT_CLIENT_ALLOC_SIZE; i++)
     {
         clients[i] = DEFAULT_CLIENT;
+        struct Data_Conn *data_conn = (struct Data_Conn *)malloc(sizeof(struct Data_Conn));
+        *data_conn = DEFAULT_DATA_CONN;
+        clients[i].data_conn=data_conn;
     }
     clients_size += DEFAULT_CLIENT_ALLOC_SIZE;
     return clients;

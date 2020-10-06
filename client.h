@@ -20,7 +20,7 @@ struct User
 };
 
 // response msg
-struct CommandResponse
+struct Command_Response
 {
     char *message;
 };
@@ -31,10 +31,12 @@ enum Data_Conn_Mode
     PASV
 };
 
-enum Data_Conn_Status
+enum Command_Status
 {
-    READ,
-    WRITE
+    LIST,
+    RETR,
+    STOR,
+    IDLE
 };
 
 // data connection
@@ -45,7 +47,8 @@ struct Data_Conn
     int clifd;
     enum Data_Conn_Mode mode;
     struct aiocb *acb;
-    enum Data_Conn_Status status;
+
+    char* buf;
 };
 
 // cmd_response
@@ -60,10 +63,13 @@ struct Client
     struct Data_Conn *data_conn;
 
     // cmd response
-    struct CommandResponse *cmd_response;
+    struct Command_Response *cmd_response;
     // connection socket
     int socket_fd;
     char *current_dir;
+    char *current_filename;
+
+    enum Command_Status command_status;
 };
 
 extern struct Data_Conn DEFAULT_DATA_CONN;

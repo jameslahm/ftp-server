@@ -104,7 +104,7 @@ int main(int argc, char **argv)
 		rset = server_rc.all_rset;
 		wset = server_rc.all_wset;
 
-		struct timeval timeout = {5, 0};
+		// struct timeval timeout = {5, 0};
 
 		log_info("current clients: %d", max_client_id + 1);
 		log_info("select fds (maxfd: %d)", server_rc.maxfd);
@@ -148,7 +148,7 @@ int main(int argc, char **argv)
 			}
 
 			// add cmd response
-			struct CommandResponse *cmd_response = make_response(220, "ftp.ssast.org FTP server ready\r\n");
+			struct Command_Response *cmd_response = make_response(220, "ftp.ssast.org FTP server ready\r\n");
 			server_rc.clients[i].cmd_response = cmd_response;
 
 			// add clifd to all_wset
@@ -187,14 +187,14 @@ int main(int argc, char **argv)
 				{
 					buf[nread] = '\0';
 					log_info("handle command %s", buf);
-					struct CommandResponse *cmd_response = handle_command(&server_rc.clients[i], buf, &server_rc);
+					struct Command_Response *cmd_response = handle_command(&server_rc.clients[i], buf, &server_rc);
 					server_rc.clients[i].cmd_response = cmd_response;
 				}
 			}
 			// check write
 			if (FD_ISSET(clifd, &wset))
 			{
-				struct CommandResponse *cmd_response = server_rc.clients[i].cmd_response;
+				struct Command_Response *cmd_response = server_rc.clients[i].cmd_response;
 				if (cmd_response != NULL)
 				{
 					int nwrite = write(clifd, cmd_response->message, strlen(cmd_response->message));
@@ -224,38 +224,30 @@ int main(int argc, char **argv)
 			{
 				continue;
 			}
-			if (client->data_conn == NULL)
-			{
-				continue;
-			}
 
 			struct Data_Conn *data_conn = client->data_conn;
 
 			if (data_conn->mode == PORT)
 			{
+				int error = 0;
+                socklen_t len = sizeof(error);
+                getsockopt(data_conn->clifd, SOL_SOCKET, SO_ERROR, &error, &len);
+				if(error!=0){
+					log_error("%s",strerror(error));
+
+					clear_data_conn(client,&server_rc);
+					continue;
+				}
+
 				if (FD_ISSET(data_conn->clifd, &wset))
 				{
-					if (aio_error(data_conn->acb) != 0)
-					{
-						continue;
-					}
-					else
-					{
-						int nread = handle_read(client, &server_rc);
-						log_info("data transfer to %d (%d bytes)", client->socket_fd, nread);
-					}
+					int nread = handle_read(client, &server_rc);
+					log_info("data transfer to %d (%d bytes)", client->socket_fd, nread);
 				};
 				if (FD_ISSET(data_conn->clifd, &rset))
 				{
-					if (aio_error(data_conn->acb) != 0)
-					{
-						continue;
-					}
-					else
-					{
-						int nwrite = handle_write(client, &server_rc);
-						log_info("data transfer from %d (%d bytes)", client->socket_fd, nwrite);
-					}
+					int nwrite = handle_write(client, &server_rc);
+					log_info("data transfer from %d (%d bytes)", client->socket_fd, nwrite);
 				};
 			}
 			if (data_conn->mode == PASV)
@@ -268,45 +260,33 @@ int main(int argc, char **argv)
 					{
 						server_rc.maxfd = data_conn->clifd;
 					}
-					if (data_conn->status == READ)
+
+					if (client->command_status == RETR || client->command_status == LIST)
 					{
 						FD_SET(data_conn->clifd, &server_rc.all_wset);
 						continue;
 					}
-					else
+					if (client->command_status == STOR)
 					{
 						FD_SET(data_conn->clifd, &server_rc.all_rset);
 						continue;
 					}
 				}
-				if (data_conn->status == READ)
+
+				if (FD_ISSET(data_conn->clifd, &server_rc.all_wset))
 				{
-					if (FD_ISSET(data_conn->clifd, &server_rc.all_wset))
+					int nread = handle_read(client, &server_rc);
+					if (nread > 0)
 					{
-						if (aio_error(data_conn->acb) != 0)
-						{
-							continue;
-						}
-						else
-						{
-							int nread = handle_read(client, &server_rc);
-							log_info("data transfer to %d (%d bytes)", client->socket_fd, nread);
-						}
+						log_info("data transfer to %d (%d bytes)", client->socket_fd, nread);
 					}
 				}
-				if (data_conn->status == WRITE)
+				if (FD_ISSET(data_conn->clifd, &server_rc.all_rset))
 				{
-					if (FD_ISSET(data_conn->clifd, &server_rc.all_rset))
+					int nwrite = handle_write(client, &server_rc);
+					if (nwrite > 0)
 					{
-						if (aio_error(data_conn->acb) != 0)
-						{
-							continue;
-						}
-						else
-						{
-							int nwrite = handle_write(client, &server_rc);
-							log_info("data transfer from %d (%d bytes)", client->socket_fd, nwrite);
-						}
+						log_info("data transfer from %d (%d bytes)", client->socket_fd, nwrite);
 					}
 				}
 			}

@@ -5,31 +5,20 @@
 
 #include "response.h"
 
-struct CommandResponse *make_response(int code, char *message)
+struct Command_Response *make_response(int code, char *message)
 {
     int message_length = strlen(message);
     int code_length = snprintf(NULL, 0, "%d ", code);
     char *buf = (char *)malloc(sizeof(char) * (code_length + message_length + 1));
     snprintf(buf, code_length + 1, "%d ", code);
     snprintf(buf + code_length, message_length + 1, "%s", message);
-    struct CommandResponse *cmd_response = (struct CommandResponse *)malloc(sizeof(struct CommandResponse));
+    struct Command_Response *cmd_response = (struct Command_Response *)malloc(sizeof(struct Command_Response));
     cmd_response->message = buf;
+    log_info("make response: %s",buf);
     return cmd_response;
 }
 
-struct CommandResponse *make_mark_response(int code, char *message)
-{
-    int message_length = strlen(message);
-    int code_length = snprintf(NULL, 0, "%d-", code);
-    char *buf = (char *)malloc(sizeof(char) * (code_length + message_length + 1));
-    snprintf(buf, code_length + 1, "%d-", code);
-    snprintf(buf + code_length, message_length + 1, "%s", message);
-    struct CommandResponse *cmd_response = (struct CommandResponse *)malloc(sizeof(struct CommandResponse));
-    cmd_response->message = buf;
-    return cmd_response;
-}
-
-struct CommandResponse *make_multiline_response(int code, char message[][MAXLINE])
+struct Command_Response *make_multiline_response(int code, char message[][MAXLINE])
 {
     int code_length = snprintf(NULL, 0, "%d ", code);
 
@@ -61,7 +50,7 @@ struct CommandResponse *make_multiline_response(int code, char message[][MAXLINE
             break;
         }
     }
-    struct CommandResponse *cmd_response = (struct CommandResponse *)malloc(sizeof(struct CommandResponse));
+    struct Command_Response *cmd_response = (struct Command_Response *)malloc(sizeof(struct Command_Response));
     cmd_response->message = buf;
     return cmd_response;
 }

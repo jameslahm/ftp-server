@@ -14,6 +14,7 @@
 
 #include "client.h"
 #include "response.h"
+#include "list_dir.h"
 
 typedef struct
 {
@@ -23,7 +24,11 @@ typedef struct
     char *args;
 } Command;
 
-struct CommandResponse *handle_command(struct Client *client, char *buf, struct Server_RC *server_rc);
+struct Command_Response *handle_command(struct Client *client, char *buf, struct Server_RC *server_rc);
+
 int handle_read(struct Client *client, struct Server_RC *server_rc);
 
 int handle_write(struct Client *client, struct Server_RC *server_rc);
+
+void clear_data_conn(struct Client *client, struct Server_RC *server_rc);
+

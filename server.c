@@ -152,6 +152,7 @@ int main(int argc, char **argv)
 					FD_SET(client->socket_fd, &server_rc.all_wset);
 					client->cmd_response = make_response(425, "No data connection established\r\n");
 					client->command_status = IDLE;
+					continue;
 				}
 				if (now - client->last_check_time >= 10)
 				{
@@ -284,7 +285,7 @@ int main(int argc, char **argv)
 					{
 						log_error("response cmd: \n%s", strerror(errno));
 					}
-					if (client->command_status == LIST || client->command_status == RETR || client->command_status == STOR)
+					if (client->command_status != IDLE)
 					{
 						if (client->data_conn == NULL)
 						{
@@ -375,7 +376,7 @@ int main(int argc, char **argv)
 						FD_SET(data_conn->clifd, &server_rc.all_wset);
 						continue;
 					}
-					if (client->command_status == STOR)
+					if (client->command_status == STOR || client->command_status==APPE)
 					{
 						FD_SET(data_conn->clifd, &server_rc.all_rset);
 						continue;

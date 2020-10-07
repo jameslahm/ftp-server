@@ -2,7 +2,7 @@
 
 struct Data_Conn DEFAULT_DATA_CONN = {NULL, -1, -1, PORT, NULL};
 struct User DEFAULT_USER = {NULL, NULL};
-struct Client DEFAULT_CLIENT = {NULL, NULL, NULL, -1, 0, NULL, NULL, IDLE};
+struct Client DEFAULT_CLIENT = {NULL, NULL, NULL, -1, 0, NULL, NULL, -1,IDLE};
 // default alloc client nums
 int DEFAULT_CLIENT_ALLOC_SIZE = 10;
 // clients size

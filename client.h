@@ -37,6 +37,7 @@ enum Command_Status
     LIST,
     RETR,
     STOR,
+    APPE,
     IDLE
 };
 
@@ -68,8 +69,10 @@ struct Client
     // connection socket
     int socket_fd;
     time_t last_check_time;
+
     char *current_dir;
     char *current_filename;
+    int offset;
 
     enum Command_Status command_status;
 };

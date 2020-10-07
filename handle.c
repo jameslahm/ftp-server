@@ -111,7 +111,7 @@ struct Command_Response *init_data_conn(struct Client *client, struct Server_RC 
             log_error("conect error: %s", strerror(errno));
         }
 
-        if (client->command_status == STOR)
+        if (client->command_status == STOR || client->command_status == APPE)
         {
             FD_SET(client->data_conn->clifd, &server_rc->all_rset);
         }
@@ -194,7 +194,14 @@ int handle_read(struct Client *client, struct Server_RC *server_rc)
     if (client->command_status == LIST)
     {
         int nread = strlen(data_conn->buf);
-        write(data_conn->clifd, data_conn->buf, nread);
+        int res = write(data_conn->clifd, data_conn->buf, nread);
+        if (res == -1)
+        {
+            client->cmd_response = make_response(426, "Connection closed;transfer aborted\r\n");
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            clear_data_conn(client, server_rc);
+            return 0;
+        }
         client->cmd_response = make_response(226, "Transfer complete\r\n");
         FD_SET(client->socket_fd, &server_rc->all_wset);
         clear_data_conn(client, server_rc);
@@ -209,16 +216,29 @@ int handle_read(struct Client *client, struct Server_RC *server_rc)
         }
 
         int nread = aio_return(data_conn->acb);
-        write(data_conn->clifd, (char *)data_conn->acb->aio_buf, nread);
+        int res = write(data_conn->clifd, (char *)data_conn->acb->aio_buf, nread);
+
+        if (res == -1)
+        {
+            client->cmd_response = make_response(426, "Connection closed;transfer aborted\r\n");
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            close(data_conn->acb->aio_fildes);
+            clear_data_conn(client, server_rc);
+            return 0;
+        }
+
         if (nread == data_conn->acb->aio_nbytes)
         {
+            log_info("read offset before: %d", data_conn->acb->aio_offset);
             data_conn->acb->aio_offset += nread;
+            log_info("read offset after: %d", data_conn->acb->aio_offset);
             aio_read(data_conn->acb);
         }
         else
         {
             client->cmd_response = make_response(226, "Transfer complete\r\n");
             FD_SET(client->socket_fd, &server_rc->all_wset);
+            close(data_conn->acb->aio_fildes);
             clear_data_conn(client, server_rc);
         }
         return nread;
@@ -230,19 +250,34 @@ int handle_write(struct Client *client, struct Server_RC *server_rc)
 {
     struct Data_Conn *data_conn = client->data_conn;
 
-    if (client->command_status == STOR)
+    if (client->command_status == STOR || client->command_status == APPE)
     {
         if (aio_error(data_conn->acb) != 0)
         {
             return 0;
         }
 
-        aio_return(data_conn->acb);
+        int res = aio_return(data_conn->acb);
+        log_info("write offset before: %d", data_conn->acb->aio_offset);
+        data_conn->acb->aio_offset += res;
+        log_info("write offset after: %d", data_conn->acb->aio_offset);
+
         data_conn->acb->aio_nbytes = BUFSIZ;
         int nwrite = read(data_conn->clifd, (char *)data_conn->acb->aio_buf, data_conn->acb->aio_nbytes);
+
+        if (nwrite == -1)
+        {
+            client->cmd_response = make_response(426, "Connection closed;transfer aborted\r\n");
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            close(data_conn->acb->aio_fildes);
+            clear_data_conn(client, server_rc);
+            return 0;
+        }
+
         if (nwrite == 0)
         {
             client->cmd_response = make_response(226, "Transfer complete\r\n");
+            close(data_conn->acb->aio_fildes);
             FD_SET(client->socket_fd, &server_rc->all_wset);
             clear_data_conn(client, server_rc);
         }
@@ -411,14 +446,30 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         return make_response(227, buf);
     }
 
-    if (strcmp(cmd->type, "RETR") == 0 || strcmp(cmd->type, "STOR") == 0)
+    if (strcmp(cmd->type, "REST") == 0)
+    {
+        sscanf(cmd->args, "%d", &client->offset);
+        if (client->offset <= -1)
+        {
+            client->offset = -1;
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            return make_response(501, "Parameter error\r\n");
+        }
+        else
+        {
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            return make_response(350, "REST successfully\r\n");
+        }
+    }
+
+    if (strcmp(cmd->type, "RETR") == 0)
     {
         FD_SET(client->socket_fd, &server_rc->all_wset);
 
-        bool is_retr = strcmp(cmd->type, "RETR") == 0 ? true : false;
         if (client->data_conn == NULL)
         {
-            client->command_status = is_retr ? RETR : STOR;
+
+            client->command_status = RETR;
             return make_response(150, "Opening Binary mode data connection\r\n");
         }
 
@@ -427,26 +478,12 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         bzero(filename, filename_length);
         snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
 
-        int fd;
-        if (is_retr)
+        int fd = open(filename, O_RDONLY);
+        if (fd == -1)
         {
-            fd = open(filename, O_RDONLY);
-            if (fd == -1)
-            {
-                FD_SET(client->socket_fd, &server_rc->all_wset);
-                clear_data_conn(client, server_rc);
-                return make_response(550, "Can't open file\r\n");
-            }
-        }
-        else
-        {
-            fd = open(filename, O_WRONLY | O_APPEND | O_CREAT);
-            if (fd == -1)
-            {
-                FD_SET(client->socket_fd, &server_rc->all_wset);
-                clear_data_conn(client, server_rc);
-                return make_response(550, "Can't open file\r\n");
-            }
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            clear_data_conn(client, server_rc);
+            return make_response(550, "Can't open file\r\n");
         }
 
         struct aiocb *acb = (struct aiocb *)malloc(sizeof(struct aiocb));
@@ -456,34 +493,113 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         client->data_conn->buf = buf;
         acb->aio_buf = client->data_conn->buf;
 
-        if (is_retr)
+        if (client->offset == -1)
         {
             acb->aio_offset = 0;
-            acb->aio_nbytes = BUFSIZ;
         }
         else
         {
-            acb->aio_nbytes = 0;
+            acb->aio_offset = client->offset;
+            client->offset = -1;
         }
+        log_info("read offset before: %d", acb->aio_offset);
+
+        acb->aio_nbytes = BUFSIZ;
         acb->aio_fildes = fd;
 
         client->data_conn->acb = acb;
 
-        if (is_retr)
-        {
-            log_info("start read %s", filename);
-            aio_read(acb);
-        }
-        else
-        {
-            log_info("start write %s", filename);
-            aio_write(acb);
-        }
+        log_info("start read %s", filename);
+        aio_read(acb);
 
-        client->command_status = is_retr ? RETR : STOR;
+        client->command_status = RETR;
         log_info("set command status %d", client->command_status);
         return init_data_conn(client, server_rc);
     };
+
+    if (strcmp(cmd->type, "STOR") == 0)
+    {
+        FD_SET(client->socket_fd, &server_rc->all_wset);
+
+        if (client->data_conn == NULL)
+        {
+
+            client->command_status = STOR;
+            return make_response(150, "Opening Binary mode data connection\r\n");
+        }
+
+        int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 2;
+        char *filename = (char *)(malloc(filename_length));
+        bzero(filename, filename_length);
+        snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
+
+        int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO);
+        if (fd == -1)
+        {
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            clear_data_conn(client, server_rc);
+            return make_response(550, "Can't open file\r\n");
+        }
+
+        struct aiocb *acb = (struct aiocb *)malloc(sizeof(struct aiocb));
+        bzero(acb, sizeof(*acb));
+
+        char *buf = (char *)malloc(BUFSIZ + 1);
+        client->data_conn->buf = buf;
+        acb->aio_buf = client->data_conn->buf;
+        acb->aio_nbytes = 0;
+        acb->aio_fildes = fd;
+        acb->aio_offset = 0;
+
+        client->data_conn->acb = acb;
+        log_info("start write %s", filename);
+        aio_write(acb);
+
+        client->command_status = STOR;
+        log_info("set command status %d", client->command_status);
+        return init_data_conn(client, server_rc);
+    }
+
+    if (strcmp(cmd->type, "APPE") == 0)
+    {
+        FD_SET(client->socket_fd, &server_rc->all_wset);
+
+        if (client->data_conn == NULL)
+        {
+            client->command_status = APPE;
+            return make_response(150, "Opening Binary mode data connection\r\n");
+        }
+
+        int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 2;
+        char *filename = (char *)(malloc(filename_length));
+        bzero(filename, filename_length);
+        snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
+
+        int fd = open(filename, O_WRONLY | O_APPEND | O_CREAT, S_IRWXO | S_IRWXG | S_IRWXO);
+        if (fd == -1)
+        {
+            FD_SET(client->socket_fd, &server_rc->all_wset);
+            clear_data_conn(client, server_rc);
+            return make_response(550, "Can't open file\r\n");
+        }
+
+        struct aiocb *acb = (struct aiocb *)malloc(sizeof(struct aiocb));
+        bzero(acb, sizeof(*acb));
+
+        char *buf = (char *)malloc(BUFSIZ + 1);
+        client->data_conn->buf = buf;
+        acb->aio_buf = client->data_conn->buf;
+        acb->aio_nbytes = 0;
+        acb->aio_fildes = fd;
+
+        client->data_conn->acb = acb;
+        log_info("start write %s", filename);
+        aio_write(acb);
+
+        client->command_status = APPE;
+        log_info("set command status %d", client->command_status);
+        return init_data_conn(client, server_rc);
+    }
 
     if (strcmp(cmd->type, "QUIT") == 0)
     {
@@ -543,7 +659,6 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         client->command_status = LIST;
         if (client->data_conn == NULL)
         {
-            client->command_status = LIST;
             return make_response(150, "Opening Binary mode data connection\r\n");
         }
 

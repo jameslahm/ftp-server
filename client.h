@@ -22,6 +22,7 @@ struct User
 // response msg
 struct Command_Response
 {
+    int code;
     char *message;
 };
 
@@ -66,12 +67,14 @@ struct Client
     struct Command_Response *cmd_response;
     // connection socket
     int socket_fd;
+    time_t last_check_time;
     char *current_dir;
     char *current_filename;
 
     enum Command_Status command_status;
 };
 
+extern struct User DEFAULT_USER;
 extern struct Data_Conn DEFAULT_DATA_CONN;
 extern struct Client DEFAULT_CLIENT;
 // default alloc client nums

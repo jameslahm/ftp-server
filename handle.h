@@ -32,3 +32,5 @@ int handle_write(struct Client *client, struct Server_RC *server_rc);
 
 void clear_data_conn(struct Client *client, struct Server_RC *server_rc);
 
+bool check_data_conn(struct Client *client);
+

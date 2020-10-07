@@ -1,5 +1,17 @@
 #include "server.h"
 
+void init_socket(int socket_id)
+{
+	// int keepalive = 1;
+	// int keepidle = 600;
+	// int keepinterval = 5;
+	// int keepcount = 3;
+	// setsockopt(socket_id, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepalive, sizeof(keepalive));
+	// setsockopt(socket_id, SOL_TCP, TCP_KEEPIDLE, (void *)&keepidle, sizeof(keepidle));
+	// setsockopt(socket_id, SOL_TCP, TCP_KEEPINTVL, (void *)&keepinterval, sizeof(keepinterval));
+	// setsockopt(socket_id, SOL_TCP, TCP_KEEPCNT, (void *)&keepcount, sizeof(keepcount));
+}
+
 int main(int argc, char **argv)
 {
 	struct Server_RC server_rc;
@@ -100,13 +112,66 @@ int main(int argc, char **argv)
 
 	while (1)
 	{
+		// check dead client
+		log_info("check dead client...");
+		for (int i = 0; i <= max_client_id; i++)
+		{
+			struct Client *client = &server_rc.clients[i];
+			if (client->socket_fd < 0)
+			{
+				continue;
+			}
+			time_t now = time(NULL);
+			if (now - client->last_check_time >= 600)
+			{
+				log_info("find client %d dead", client->socket_fd);
+				client->cmd_response = make_response(421, "Connection time out\r\n");
+			}
+		}
+
+		// LIST RETR STOR need process again
+		for (int i = 0; i <= max_client_id; i++)
+		{
+			struct Client *client = &server_rc.clients[i];
+			if (client->socket_fd < 0)
+			{
+				continue;
+			}
+
+			if (client->cmd_response != NULL)
+			{
+				continue;
+			}
+
+			if (client->command_status != IDLE)
+			{
+				// process again
+				time_t now = time(NULL);
+				if (client->data_conn == NULL)
+				{
+					FD_SET(client->socket_fd, &server_rc.all_wset);
+					client->cmd_response = make_response(425, "No data connection established\r\n");
+					client->command_status = IDLE;
+				}
+				if (now - client->last_check_time >= 10)
+				{
+					if (!check_data_conn(client))
+					{
+						FD_SET(client->socket_fd, &server_rc.all_wset);
+						client->cmd_response = make_response(425, "No data connection established\r\n");
+						client->command_status = IDLE;
+					}
+				}
+			}
+		}
+
 		// Check read socket
 		rset = server_rc.all_rset;
 		wset = server_rc.all_wset;
 
 		// struct timeval timeout = {5, 0};
 
-		log_info("current clients: %d", max_client_id + 1);
+		log_info("current max clients: %d", max_client_id + 1);
 		log_info("select fds (maxfd: %d)", server_rc.maxfd);
 
 		int n;
@@ -130,6 +195,7 @@ int main(int argc, char **argv)
 
 			// add client
 			log_info("add client %d", clifd);
+			init_socket(clifd);
 
 			int i = client_add(&server_rc, clifd);
 			server_rc.clients[i].current_dir = server_rc.root_dir;
@@ -162,7 +228,8 @@ int main(int argc, char **argv)
 		for (int i = 0; i <= max_client_id; i++)
 		{
 			int clifd;
-			if ((clifd = server_rc.clients[i].socket_fd) < 0)
+			struct Client *client = &server_rc.clients[i];
+			if ((clifd = client->socket_fd) < 0)
 			{
 				continue;
 			}
@@ -178,30 +245,34 @@ int main(int argc, char **argv)
 				// client close
 				else if (nread == 0)
 				{
+					clear_data_conn(client, &server_rc);
 					client_del(server_rc.clients, i);
 					log_info("delete client (%d)", i);
 					FD_CLR(clifd, &server_rc.all_rset);
+					if (server_rc.maxfd == clifd)
+					{
+						server_rc.maxfd -= 1;
+					}
 					close(clifd);
 				}
 				else
 				{
 					buf[nread] = '\0';
 					log_info("handle command %s", buf);
-					struct Client *client = &server_rc.clients[i];
-					if (client->cmd_response != NULL || client->command_status!=IDLE)
+					if (client->cmd_response != NULL || client->command_status != IDLE)
 					{
 						log_info("shield command %s", buf);
 						continue;
 					}
 					struct Command_Response *cmd_response = handle_command(client, buf, &server_rc);
-					server_rc.clients[i].cmd_response = cmd_response;
+					client->cmd_response = cmd_response;
 				}
 			}
 
 			// check write
 			if (FD_ISSET(clifd, &wset))
 			{
-				struct Command_Response *cmd_response = server_rc.clients[i].cmd_response;
+				struct Command_Response *cmd_response = client->cmd_response;
 				if (cmd_response != NULL)
 				{
 					int nwrite = write(clifd, cmd_response->message, strlen(cmd_response->message));
@@ -213,20 +284,30 @@ int main(int argc, char **argv)
 					{
 						log_error("response cmd: \n%s", strerror(errno));
 					}
-					free(cmd_response->message);
-					free(cmd_response);
-					server_rc.clients[i].cmd_response = NULL;
-
-					struct Client *client = &server_rc.clients[i];
 					if (client->command_status == LIST || client->command_status == RETR || client->command_status == STOR)
 					{
 						if (client->data_conn == NULL)
 						{
-							log_info("set command status %d",IDLE);
+							log_info("set command status %d", IDLE);
 							client->command_status = IDLE;
 						}
 					}
+					client->cmd_response = NULL;
 					FD_CLR(clifd, &server_rc.all_wset);
+					if (cmd_response->code == 221 || cmd_response->code == 421)
+					{
+						clear_data_conn(client, &server_rc);
+						client_del(server_rc.clients, i);
+						log_info("delete client (%d)", i);
+						FD_CLR(clifd, &server_rc.all_rset);
+						if (server_rc.maxfd == clifd)
+						{
+							server_rc.maxfd -= 1;
+						}
+						close(clifd);
+					}
+					free(cmd_response->message);
+					free(cmd_response);
 				}
 			}
 		}
@@ -264,12 +345,18 @@ int main(int argc, char **argv)
 				if (FD_ISSET(data_conn->clifd, &wset))
 				{
 					int nread = handle_read(client, &server_rc);
-					log_info("data transfer to %d (%d bytes)", client->socket_fd, nread);
+					if (nread > 0)
+					{
+						log_info("data transfer to %d (%d bytes)", client->socket_fd, nread);
+					}
 				};
 				if (FD_ISSET(data_conn->clifd, &rset))
 				{
 					int nwrite = handle_write(client, &server_rc);
-					log_info("data transfer from %d (%d bytes)", client->socket_fd, nwrite);
+					if (nwrite > 0)
+					{
+						log_info("data transfer from %d (%d bytes)", client->socket_fd, nwrite);
+					}
 				};
 			}
 			if (data_conn->mode == PASV)

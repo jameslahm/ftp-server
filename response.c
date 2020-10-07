@@ -14,6 +14,7 @@ struct Command_Response *make_response(int code, char *message)
     snprintf(buf + code_length, message_length + 1, "%s", message);
     struct Command_Response *cmd_response = (struct Command_Response *)malloc(sizeof(struct Command_Response));
     cmd_response->message = buf;
+    cmd_response->code=code;
     log_info("make response: %s",buf);
     return cmd_response;
 }
@@ -52,5 +53,6 @@ struct Command_Response *make_multiline_response(int code, char message[][MAXLIN
     }
     struct Command_Response *cmd_response = (struct Command_Response *)malloc(sizeof(struct Command_Response));
     cmd_response->message = buf;
+    cmd_response->code=code;
     return cmd_response;
 }

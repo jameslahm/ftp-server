@@ -24,9 +24,6 @@ struct Client *client_alloc(struct Client *clients)
     for (int i = clients_size; i < clients_size + DEFAULT_CLIENT_ALLOC_SIZE; i++)
     {
         clients[i] = DEFAULT_CLIENT;
-        struct Data_Conn *data_conn = (struct Data_Conn *)malloc(sizeof(struct Data_Conn));
-        *data_conn = DEFAULT_DATA_CONN;
-        clients[i].data_conn=data_conn;
     }
     clients_size += DEFAULT_CLIENT_ALLOC_SIZE;
     return clients;

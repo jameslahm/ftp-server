@@ -187,10 +187,17 @@ int main(int argc, char **argv)
 				{
 					buf[nread] = '\0';
 					log_info("handle command %s", buf);
-					struct Command_Response *cmd_response = handle_command(&server_rc.clients[i], buf, &server_rc);
+					struct Client *client = &server_rc.clients[i];
+					if (client->cmd_response != NULL || client->command_status!=IDLE)
+					{
+						log_info("shield command %s", buf);
+						continue;
+					}
+					struct Command_Response *cmd_response = handle_command(client, buf, &server_rc);
 					server_rc.clients[i].cmd_response = cmd_response;
 				}
 			}
+
 			// check write
 			if (FD_ISSET(clifd, &wset))
 			{
@@ -209,6 +216,16 @@ int main(int argc, char **argv)
 					free(cmd_response->message);
 					free(cmd_response);
 					server_rc.clients[i].cmd_response = NULL;
+
+					struct Client *client = &server_rc.clients[i];
+					if (client->command_status == LIST || client->command_status == RETR || client->command_status == STOR)
+					{
+						if (client->data_conn == NULL)
+						{
+							log_info("set command status %d",IDLE);
+							client->command_status = IDLE;
+						}
+					}
 					FD_CLR(clifd, &server_rc.all_wset);
 				}
 			}
@@ -224,18 +241,23 @@ int main(int argc, char **argv)
 			{
 				continue;
 			}
+			if (client->data_conn == NULL)
+			{
+				continue;
+			}
 
 			struct Data_Conn *data_conn = client->data_conn;
 
 			if (data_conn->mode == PORT)
 			{
 				int error = 0;
-                socklen_t len = sizeof(error);
-                getsockopt(data_conn->clifd, SOL_SOCKET, SO_ERROR, &error, &len);
-				if(error!=0){
-					log_error("%s",strerror(error));
+				socklen_t len = sizeof(error);
+				getsockopt(data_conn->clifd, SOL_SOCKET, SO_ERROR, &error, &len);
+				if (error != 0)
+				{
+					log_error("%s", strerror(error));
 
-					clear_data_conn(client,&server_rc);
+					clear_data_conn(client, &server_rc);
 					continue;
 				}
 

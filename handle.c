@@ -42,6 +42,8 @@ void clear_data_conn(struct Client *client, struct Server_RC *server_rc)
     {
         free(data_conn->acb);
     }
+    free(data_conn);
+    client->data_conn = NULL;
 }
 
 struct Command_Response *init_data_conn(struct Client *client, struct Server_RC *server_rc)
@@ -160,8 +162,9 @@ int handle_read(struct Client *client, struct Server_RC *server_rc)
     {
         int nread = strlen(data_conn->buf);
         write(data_conn->clifd, data_conn->buf, nread);
+        client->cmd_response = make_response(226, "Transfer complete\r\n");
+        FD_SET(client->socket_fd, &server_rc->all_wset);
         clear_data_conn(client, server_rc);
-        FD_SET(client->socket_fd,&server_rc->all_rset);
         return nread;
     }
 
@@ -183,7 +186,6 @@ int handle_read(struct Client *client, struct Server_RC *server_rc)
         {
             client->cmd_response = make_response(226, "Transfer complete\r\n");
             FD_SET(client->socket_fd, &server_rc->all_wset);
-            FD_SET(client->socket_fd,&server_rc->all_rset);
             clear_data_conn(client, server_rc);
         }
         return nread;
@@ -209,7 +211,6 @@ int handle_write(struct Client *client, struct Server_RC *server_rc)
         {
             client->cmd_response = make_response(226, "Transfer complete\r\n");
             FD_SET(client->socket_fd, &server_rc->all_wset);
-            FD_SET(client->socket_fd,&server_rc->all_rset);
             clear_data_conn(client, server_rc);
         }
         else
@@ -299,9 +300,11 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         addr->sin_port = htons(*port);
         inet_aton(ip, &addr->sin_addr);
 
-        struct Data_Conn *data_conn = client->data_conn;
+        struct Data_Conn *data_conn = (struct Data_Conn *)malloc(sizeof(struct Data_Conn));
+        *data_conn = DEFAULT_DATA_CONN;
         data_conn->addr = addr;
         data_conn->mode = PORT;
+        client->data_conn = data_conn;
 
         FD_SET(client->socket_fd, &server_rc->all_wset);
         return make_response(200, "PORT command successful\r\n");
@@ -317,10 +320,11 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         addr->sin_port = htons(0);
         addr->sin_addr.s_addr = htonl(INADDR_ANY);
 
-        struct Data_Conn *data_conn = client->data_conn;
+        struct Data_Conn *data_conn = (struct Data_Conn *)malloc(sizeof(struct Data_Conn));
         *data_conn = DEFAULT_DATA_CONN;
         data_conn->addr = addr;
         data_conn->mode = PASV;
+        client->data_conn = data_conn;
 
         data_conn->listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         bind(data_conn->listenfd, (struct sockaddr *)data_conn->addr, sizeof(struct sockaddr_in));
@@ -387,7 +391,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         }
 
         client->command_status = is_retr ? RETR : STOR;
-        FD_CLR(client->socket_fd,&server_rc->all_rset);
+        log_info("set command status %d",client->command_status);
         return init_data_conn(client, server_rc);
     };
 
@@ -432,8 +436,8 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
     {
         char *buf = list_dir(client->current_dir);
         client->command_status = LIST;
+        log_info("set command status %d",client->command_status);
         client->data_conn->buf = buf;
-        FD_CLR(client->socket_fd,&server_rc->all_rset);
         return init_data_conn(client, server_rc);
     }
     if (strcmp(cmd->type, "RMD") == 0)
@@ -444,7 +448,8 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         FD_SET(client->socket_fd, &server_rc->all_wset);
         return make_response(257, "Removed successfully\r\n");
     }
-    if(strcmp(cmd->type,"DELE")==0){
+    if (strcmp(cmd->type, "DELE") == 0)
+    {
         char *path = normalize_path(client, cmd->args);
         remove(path);
 

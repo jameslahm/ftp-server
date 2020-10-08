@@ -13,7 +13,9 @@ char *list_file(char *name,char* dir) //Print the - l parameter in the correspon
 
     struct stat stat_buf;
 
-    char *path=(char*)malloc(strlen(name)+strlen(dir)+2);
+    int path_length=strlen(name)+strlen(dir)+2;
+    char *path=(char*)malloc(path_length);
+    bzero(path,path_length);
     sprintf(path,"%s/%s",dir,name);
     
     lstat(path, &stat_buf);
@@ -117,11 +119,13 @@ char *list_dir(char *path) //This function is used to process directories
     }
     closedir(dir);
 
-    char **filenames = (char **)malloc(sizeof(char *) * count), temp[PATH_MAX + 1]; //Dynamic allocation of storage space on the heap is achieved by the number of files in the directory. First, an array of pointers is defined.
+    char **filenames = (char **)malloc(sizeof(char *) * count);
+    char temp[PATH_MAX + 1]; 
 
     for (int i = 0; i < count; i++) //Then let each pointer in the array point to the allocated space in turn. Here is the optimization, which is effective.
     {                               //It prevents stack overflow and allocates memory dynamically, which saves more space.
-        filenames[i] = (char *)malloc(sizeof(char) * PATH_MAX + 1);
+        filenames[i] = (char *)malloc(PATH_MAX + 1);
+        bzero(filenames[i],PATH_MAX+1);
     }
 
     int i, j;
@@ -159,8 +163,16 @@ char *list_dir(char *path) //This function is used to process directories
 
             char *tmp_buf = list_file(filenames[i],path);
             base += sprintf(buf + base, "%s", tmp_buf);
+            free(tmp_buf);
         }
     }
+
+    for (int i = 0; i < count; i++) //Then let each pointer in the array point to the allocated space in turn. Here is the optimization, which is effective.
+    {                               //It prevents stack overflow and allocates memory dynamically, which saves more space.
+        free(filenames[i]);
+    }
+    free(filenames);
+
     return buf;
 }
 

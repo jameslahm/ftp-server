@@ -2,14 +2,17 @@
 
 char *normalize_path(struct Client *client, char *dir)
 {
-    char *path = (char *)malloc(strlen(dir) + strlen(client->current_dir) + 2);
+    int path_length=strlen(dir) + strlen(client->current_dir) + 2;
+    char *path = (char *)malloc(path_length);
+    bzero(path,path_length);
     if (dir[0] == '/')
     {
         realpath(dir, path);
     }
     else
     {
-        char *tmp_path = (char *)malloc(strlen(dir) + strlen(client->current_dir) + 2);
+        char *tmp_path = (char *)malloc(path_length);
+        bzero(tmp_path,path_length);
         sprintf(tmp_path, "%s/%s", client->current_dir, dir);
         realpath(tmp_path, path);
     }
@@ -50,6 +53,7 @@ void clear_data_conn(struct Client *client, struct Server_RC *server_rc)
         if (server_rc->maxfd == data_conn->clifd)
         {
             server_rc->maxfd -= 1;
+            log_info("set maxfd %d", server_rc->maxfd);
         }
         close(data_conn->clifd);
 
@@ -64,6 +68,7 @@ void clear_data_conn(struct Client *client, struct Server_RC *server_rc)
             if (server_rc->maxfd == data_conn->listenfd)
             {
                 server_rc->maxfd -= 1;
+                log_info("set maxfd %d", server_rc->maxfd);
             }
             close(data_conn->listenfd);
         }
@@ -89,6 +94,7 @@ struct Command_Response *init_data_conn(struct Client *client, struct Server_RC 
         if (client->data_conn->clifd > server_rc->maxfd)
         {
             server_rc->maxfd = client->data_conn->clifd;
+            log_info("set maxfd %d", server_rc->maxfd);
         }
 
         int flags = fcntl(client->data_conn->clifd, F_GETFL, 0);
@@ -182,6 +188,7 @@ char *stringify_address(struct sockaddr_in *addr)
     int port_1 = port / 256;
     int port_2 = port % 256;
     char *buf = (char *)malloc(MAXLINE);
+    bzero(buf,MAXLINE);
     snprintf(buf, MAXLINE, "%s,%d,%d", ip, port_1, port_2);
     free(ip);
     return buf;
@@ -189,6 +196,7 @@ char *stringify_address(struct sockaddr_in *addr)
 
 int handle_read(struct Client *client, struct Server_RC *server_rc)
 {
+    client->last_check_time = time(NULL);
     struct Data_Conn *data_conn = client->data_conn;
 
     if (client->command_status == LIST)
@@ -248,6 +256,7 @@ int handle_read(struct Client *client, struct Server_RC *server_rc)
 
 int handle_write(struct Client *client, struct Server_RC *server_rc)
 {
+    client->last_check_time = time(NULL);
     struct Data_Conn *data_conn = client->data_conn;
 
     if (client->command_status == STOR || client->command_status == APPE)
@@ -396,6 +405,9 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         addr->sin_port = htons(*port);
         inet_aton(ip, &addr->sin_addr);
 
+        free(ip);
+        free(port);
+
         struct Data_Conn *data_conn = (struct Data_Conn *)malloc(sizeof(struct Data_Conn));
         *data_conn = DEFAULT_DATA_CONN;
         data_conn->addr = addr;
@@ -431,6 +443,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         if (data_conn->listenfd > server_rc->maxfd)
         {
             server_rc->maxfd = data_conn->listenfd;
+            log_info("set maxfd %d", server_rc->maxfd);
         }
 
         socklen_t sockaddr_in_length = sizeof(struct sockaddr_in);
@@ -440,10 +453,13 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         log_info("stringify address");
         char *address = stringify_address(data_conn->addr);
         char *buf = (char *)malloc(MAXLINE);
+        bzero(buf,MAXLINE);
         snprintf(buf, MAXLINE, "Entering Passive Mode (%s)\r\n", address);
         free(address);
         FD_SET(client->socket_fd, &server_rc->all_wset);
-        return make_response(227, buf);
+        struct Command_Response *cmd_response = make_response(227, buf);
+        free(buf);
+        return cmd_response;
     }
 
     if (strcmp(cmd->type, "REST") == 0)
@@ -490,6 +506,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         bzero(acb, sizeof(*acb));
 
         char *buf = (char *)malloc(BUFSIZ + 1);
+        bzero(buf,BUFSIZ+1);
         client->data_conn->buf = buf;
         acb->aio_buf = client->data_conn->buf;
 
@@ -511,6 +528,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
 
         log_info("start read %s", filename);
         aio_read(acb);
+        free(filename);
 
         client->command_status = RETR;
         log_info("set command status %d", client->command_status);
@@ -545,6 +563,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         bzero(acb, sizeof(*acb));
 
         char *buf = (char *)malloc(BUFSIZ + 1);
+        bzero(buf,BUFSIZ+1);
         client->data_conn->buf = buf;
         acb->aio_buf = client->data_conn->buf;
         acb->aio_nbytes = 0;
@@ -554,6 +573,8 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         client->data_conn->acb = acb;
         log_info("start write %s", filename);
         aio_write(acb);
+
+        free(filename);
 
         client->command_status = STOR;
         log_info("set command status %d", client->command_status);
@@ -587,6 +608,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         bzero(acb, sizeof(*acb));
 
         char *buf = (char *)malloc(BUFSIZ + 1);
+        bzero(buf,BUFSIZ+1);
         client->data_conn->buf = buf;
         acb->aio_buf = client->data_conn->buf;
         acb->aio_nbytes = 0;
@@ -595,6 +617,8 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         client->data_conn->acb = acb;
         log_info("start write %s", filename);
         aio_write(acb);
+
+        free(filename);
 
         client->command_status = APPE;
         log_info("set command status %d", client->command_status);
@@ -618,12 +642,17 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         FD_SET(client->socket_fd, &server_rc->all_wset);
         char *path = normalize_path(client, cmd->args);
         int res = mkdir(path, S_IRWXU | S_IRWXG | S_IRWXO);
+
+        free(path);
         if (res == 0)
         {
-            char *buf = (char *)malloc(strlen(cmd->args) + 101);
+            char *buf = (char *)malloc(MAXLINE);
+            bzero(buf,MAXLINE);
             sprintf(buf, "created successfully!\r\n");
 
-            return make_response(257, buf);
+            struct Command_Response *cmd_response = make_response(257, buf);
+            free(buf);
+            return cmd_response;
         }
         else
         {
@@ -636,13 +665,18 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         FD_SET(client->socket_fd, &server_rc->all_wset);
 
         char *path = normalize_path(client, cmd->args);
-        client->current_dir = path;
 
-        int res = access(client->current_dir, F_OK | R_OK | X_OK);
+        int res = access(path, F_OK | R_OK | X_OK);
         if (res == -1)
         {
             return make_response(550, "CWD failure\r\n");
         }
+        if (client->current_dir != NULL)
+        {
+            free(client->current_dir);
+            client->current_dir = NULL;
+        }
+        client->current_dir = path;
         return make_response(250, "Okay\r\n");
     }
     if (strcmp(cmd->type, "PWD") == 0)
@@ -652,7 +686,9 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         sprintf(buf, "\"%s\"\r\n", client->current_dir);
 
         FD_SET(client->socket_fd, &server_rc->all_wset);
-        return make_response(257, buf);
+        struct Command_Response *cmd_response = make_response(257, buf);
+        free(buf);
+        return cmd_response;
     }
     if (strcmp(cmd->type, "LIST") == 0)
     {
@@ -672,6 +708,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         FD_SET(client->socket_fd, &server_rc->all_wset);
         char *path = normalize_path(client, cmd->args);
         int res = rmdir(path);
+        free(path);
         if (res == 0)
         {
             return make_response(250, "Removed successfully\r\n");
@@ -683,6 +720,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         FD_SET(client->socket_fd, &server_rc->all_wset);
         char *path = normalize_path(client, cmd->args);
         int res = remove(path);
+        free(path);
         if (res == 0)
         {
             return make_response(250, "Removed successfully\r\n");
@@ -691,6 +729,11 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
     }
     if (strcmp(cmd->type, "RNFR") == 0)
     {
+        if (client->current_filename != NULL)
+        {
+            free(client->current_filename);
+            client->current_filename = NULL;
+        }
         client->current_filename = normalize_path(client, cmd->args);
 
         FD_SET(client->socket_fd, &server_rc->all_wset);
@@ -706,6 +749,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
             return make_response(503, "Must request RNFR first\r\n");
         }
         int res = rename(client->current_filename, path);
+        free(path);
         if (res == 0)
         {
             return make_response(250, "Rename successfully\r\n");

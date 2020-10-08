@@ -1,5 +1,8 @@
 #pragma once
 #include <sys/select.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "log.h"
 
 #define MAXLINE 4096
@@ -14,3 +17,5 @@ struct Server_RC
     int maxfd;
     struct Client *clients;
 };
+
+char* copy(char* src);

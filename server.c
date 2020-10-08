@@ -199,7 +199,7 @@ int main(int argc, char **argv)
 			init_socket(clifd);
 
 			int i = client_add(&server_rc, clifd);
-			server_rc.clients[i].current_dir = server_rc.root_dir;
+			server_rc.clients[i].current_dir = copy(server_rc.root_dir);
 
 			// add clifd to all_rset
 			FD_SET(clifd, &server_rc.all_rset);
@@ -208,6 +208,7 @@ int main(int argc, char **argv)
 			if (clifd > server_rc.maxfd)
 			{
 				server_rc.maxfd = clifd;
+				log_info("set maxfd %d",server_rc.maxfd);
 			}
 			if (i > max_client_id)
 			{
@@ -253,6 +254,7 @@ int main(int argc, char **argv)
 					if (server_rc.maxfd == clifd)
 					{
 						server_rc.maxfd -= 1;
+						log_info("set maxfd %d",server_rc.maxfd);
 					}
 					close(clifd);
 				}
@@ -304,6 +306,7 @@ int main(int argc, char **argv)
 						if (server_rc.maxfd == clifd)
 						{
 							server_rc.maxfd -= 1;
+							log_info("set maxfd %d",server_rc.maxfd);
 						}
 						close(clifd);
 					}
@@ -369,6 +372,7 @@ int main(int argc, char **argv)
 					if (server_rc.maxfd < data_conn->clifd)
 					{
 						server_rc.maxfd = data_conn->clifd;
+						log_info("set maxfd %d",server_rc.maxfd);
 					}
 
 					if (client->command_status == RETR || client->command_status == LIST)

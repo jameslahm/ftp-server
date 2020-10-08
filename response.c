@@ -9,7 +9,9 @@ struct Command_Response *make_response(int code, char *message)
 {
     int message_length = strlen(message);
     int code_length = snprintf(NULL, 0, "%d ", code);
-    char *buf = (char *)malloc(sizeof(char) * (code_length + message_length + 1));
+    int buf_length=sizeof(char) * (code_length + message_length + 1);
+    char *buf = (char *)malloc(buf_length);
+    bzero(buf,buf_length);
     snprintf(buf, code_length + 1, "%d ", code);
     snprintf(buf + code_length, message_length + 1, "%s", message);
     struct Command_Response *cmd_response = (struct Command_Response *)malloc(sizeof(struct Command_Response));

@@ -1,5 +1,35 @@
 #include "server.h"
 
+char* get_real_ip(){
+	struct ifaddrs *addrs;
+    getifaddrs(&addrs);
+    struct ifaddrs *tmp = addrs;
+	char* res=NULL;
+
+    while (tmp)
+    {
+        if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET)
+        {
+            struct sockaddr_in *pAddr = (struct sockaddr_in *)tmp->ifa_addr;
+            char *tmp_buf=inet_ntoa(pAddr->sin_addr);
+			if(strcmp(tmp_buf,"127.0.0.1")!=0){
+				res=copy(tmp_buf);
+				break;
+			}
+        }
+        tmp = tmp->ifa_next;
+    }
+
+    freeifaddrs(addrs);
+
+	if(res==NULL){
+		res=(char*)malloc(IP_LENGTH);
+		bzero(res,IP_LENGTH);
+		sprintf(res,"127.0.0.1");
+	}
+	return res;
+}
+
 void init_socket(int socket_id)
 {
 	// int keepalive = 1;
@@ -23,6 +53,8 @@ int main(int argc, char **argv)
 
 	// default port: 21
 	server_rc.port = 21;
+
+	server_rc.ip=get_real_ip();
 
 	// buf
 	char buf[MAXLINE];

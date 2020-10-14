@@ -20,7 +20,7 @@ char *list_file(char *name,char* dir) //Print the - l parameter in the correspon
     
     lstat(path, &stat_buf);
 
-    char stat_buff_time[32];
+    
     struct passwd *psd; //Receive the user name of the file owner from this structure
     struct group *grp;  //Get group name
     if (S_ISLNK(stat_buf.st_mode))
@@ -90,8 +90,10 @@ char *list_file(char *name,char* dir) //Print the - l parameter in the correspon
     base += sprintf(buf + base, "%s ", grp->gr_name);
     
     base += sprintf(buf + base, "%d ", (int)(stat_buf.st_size));
-    strcpy(stat_buff_time, ctime(&stat_buf.st_mtime));
-    stat_buff_time[strlen(stat_buff_time) - 1] = '\0'; //Buffe_time has its own newline, so you need to remove the following newline character
+    
+    char stat_buff_time[32]={0};
+    strftime(stat_buff_time,32,"%b %d %H:%M",localtime(&stat_buf.st_mtim.tv_sec));
+
     base += sprintf(buf + base, "%s ", stat_buff_time);
 
     base += sprintf(buf + base, "%s", name);

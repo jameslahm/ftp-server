@@ -8,6 +8,7 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <ifaddrs.h>
 
 #include "client.h"
 #include "handle.h"

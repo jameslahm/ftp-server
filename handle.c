@@ -451,11 +451,13 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         getsockname(data_conn->listenfd, (struct sockaddr *)data_conn->addr, &sockaddr_in_length);
 
         log_info("stringify address");
-        char *address = stringify_address(data_conn->addr);
+        struct sockaddr_in tmp_address=*data_conn->addr;
+        inet_aton(server_rc->ip,&tmp_address.sin_addr);
+        // TODO: better ip stringify
+        char *address=stringify_address(&tmp_address);
         char *buf = (char *)malloc(MAXLINE);
         bzero(buf,MAXLINE);
         snprintf(buf, MAXLINE, "Entering Passive Mode (%s)\r\n", address);
-        free(address);
         FD_SET(client->socket_fd, &server_rc->all_wset);
         struct Command_Response *cmd_response = make_response(227, buf);
         free(buf);

@@ -16,6 +16,7 @@ struct Server_RC
     fd_set all_wset;
     int maxfd;
     struct Client *clients;
+    char* ip;
 };
 
 char* copy(char* src);

@@ -21,48 +21,64 @@ int main(int argc, char **argv)
 	// default root dir: /tmp
 	server_rc.root_dir = "/tmp";
 
-	// default port: 12345
-	server_rc.port = 12345;
+	// default port: 21
+	server_rc.port = 21;
 
 	// buf
 	char buf[MAXLINE];
 
 	// get options include port and root dir
-	struct option long_options[] =
-		{
-			{"root", required_argument, NULL, 'r'},
-			{"port", required_argument, NULL, 'p'},
-			{0, 0, 0, 0}};
+	// struct option long_options[] =
+	// 	{
+	// 		{"root", required_argument, NULL, 'r'},
+	// 		{"port", required_argument, NULL, 'p'},
+	// 		{0, 0, 0, 0}};
 
-	int arg;
-	int option_index = 0;
-	while ((arg = getopt_long(argc, argv, ":r:p:", long_options, &option_index)) != -1)
-	{
-		switch (arg)
-		{
-		case 'r':
-		{
-			server_rc.root_dir = optarg;
-			break;
+	// int arg;
+	// int option_index = 0;
+	// while ((arg = getopt_long(argc, argv, ":r:p:", long_options, &option_index)) != -1)
+	// {
+	// 	switch (arg)
+	// 	{
+	// 	case 'r':
+	// 	{
+	// 		server_rc.root_dir = optarg;
+	// 		break;
+	// 	}
+	// 	case 'p':
+	// 	{
+	// 		sscanf(optarg, "%d", &server_rc.port);
+	// 		break;
+	// 	}
+	// 	case ':':
+	// 	{
+	// 		printf("%s need a value", long_options[option_index].name);
+	// 		break;
+	// 	}
+	// 	case '?':
+	// 	{
+	// 		printf("Unknown option\n");
+	// 	}
+	// 	default:
+	// 	{
+	// 		break;
+	// 	}
+	// 	}
+	// }
+	for(int i=1;i<argc;i++){
+		if(strcmp(argv[i],"-root")==0){
+			if(i+1==argc) {
+				log_warn("need specify root argument!");
+				continue;
+			}
+			server_rc.root_dir=argv[i+1];
 		}
-		case 'p':
-		{
-			sscanf(optarg, "%d", &server_rc.port);
-			break;
-		}
-		case ':':
-		{
-			printf("%s need a value", long_options[option_index].name);
-			break;
-		}
-		case '?':
-		{
-			printf("Unknown option\n");
-		}
-		default:
-		{
-			break;
-		}
+		if(strcmp(argv[i],"-port")==0){
+			if(i+1==argc) {
+				log_warn("need specify port argument!");
+				continue;
+			}
+			sscanf(argv[i+1],"%d",&server_rc.port);
 		}
 	}
 

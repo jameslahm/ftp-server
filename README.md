@@ -1,5 +1,6 @@
 # Ftp-Server
 
 # TODO
-- [ ] RETR
-- [ ] APPE
+- [x] RETR
+- [x] APPE
+- [ ] fix cmd options

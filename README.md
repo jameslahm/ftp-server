@@ -3,4 +3,4 @@
 # TODO
 - [x] RETR
 - [x] APPE
-- [ ] fix cmd options
+- [x] fix cmd options

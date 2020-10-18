@@ -25,7 +25,7 @@ bool check_data_conn(struct Client *client)
     {
         int error;
         socklen_t error_len = sizeof(int);
-        getsockopt(client->socket_fd, SOL_SOCKET, SO_ERROR, &error, &error_len);
+        getsockopt(client->data_conn->clifd, SOL_SOCKET, SO_ERROR, &error, &error_len);
         if (error != 0)
         {
             return false;
@@ -491,10 +491,12 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
             return make_response(150, "Opening Binary mode data connection\r\n");
         }
 
-        int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 2;
-        char *filename = (char *)(malloc(filename_length));
-        bzero(filename, filename_length);
-        snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
+        // int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 2;
+        // char *filename = (char *)(malloc(filename_length));
+        // bzero(filename, filename_length);
+        // snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
+        char *filename=normalize_path(client,cmd->args);
+        log_info("filename: %s",filename);
 
         int fd = open(filename, O_RDONLY);
         if (fd == -1)
@@ -548,10 +550,12 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
             return make_response(150, "Opening Binary mode data connection\r\n");
         }
 
-        int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 2;
-        char *filename = (char *)(malloc(filename_length));
-        bzero(filename, filename_length);
-        snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
+        // int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 2;
+        // char *filename = (char *)(malloc(filename_length));
+        // bzero(filename, filename_length);
+        // snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
+        char *filename=normalize_path(client,cmd->args);
+        log_info("filename: %s",filename);
 
         int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO);
         if (fd == -1)
@@ -593,10 +597,12 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
             return make_response(150, "Opening Binary mode data connection\r\n");
         }
 
-        int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 2;
-        char *filename = (char *)(malloc(filename_length));
-        bzero(filename, filename_length);
-        snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
+        // int filename_length = strlen(client->current_dir) + strlen(cmd->args) + 2;
+        // char *filename = (char *)(malloc(filename_length));
+        // bzero(filename, filename_length);
+        // snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
+        char *filename=normalize_path(client,cmd->args);
+        log_info("filename: %s",filename);
 
         int fd = open(filename, O_WRONLY | O_APPEND | O_CREAT, S_IRWXO | S_IRWXG | S_IRWXO);
         if (fd == -1)

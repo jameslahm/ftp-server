@@ -1,31 +1,34 @@
 #include "server.h"
 
-char* get_real_ip(){
+char *get_real_ip()
+{
 	struct ifaddrs *addrs;
-    getifaddrs(&addrs);
-    struct ifaddrs *tmp = addrs;
-	char* res=NULL;
+	getifaddrs(&addrs);
+	struct ifaddrs *tmp = addrs;
+	char *res = NULL;
 
-    while (tmp)
-    {
-        if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET)
-        {
-            struct sockaddr_in *pAddr = (struct sockaddr_in *)tmp->ifa_addr;
-            char *tmp_buf=inet_ntoa(pAddr->sin_addr);
-			if(strcmp(tmp_buf,"127.0.0.1")!=0){
-				res=copy(tmp_buf);
+	while (tmp)
+	{
+		if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET)
+		{
+			struct sockaddr_in *pAddr = (struct sockaddr_in *)tmp->ifa_addr;
+			char *tmp_buf = inet_ntoa(pAddr->sin_addr);
+			if (strcmp(tmp_buf, "127.0.0.1") != 0)
+			{
+				res = copy(tmp_buf);
 				break;
 			}
-        }
-        tmp = tmp->ifa_next;
-    }
+		}
+		tmp = tmp->ifa_next;
+	}
 
-    freeifaddrs(addrs);
+	freeifaddrs(addrs);
 
-	if(res==NULL){
-		res=(char*)malloc(IP_LENGTH);
-		bzero(res,IP_LENGTH);
-		sprintf(res,"127.0.0.1");
+	if (res == NULL)
+	{
+		res = (char *)malloc(IP_LENGTH);
+		bzero(res, IP_LENGTH);
+		sprintf(res, "127.0.0.1");
 	}
 	return res;
 }
@@ -54,7 +57,7 @@ int main(int argc, char **argv)
 	// default port: 21
 	server_rc.port = 21;
 
-	server_rc.ip=get_real_ip();
+	server_rc.ip = get_real_ip();
 
 	// buf
 	char buf[MAXLINE];
@@ -97,20 +100,27 @@ int main(int argc, char **argv)
 	// 	}
 	// 	}
 	// }
-	for(int i=1;i<argc;i++){
-		if(strcmp(argv[i],"-root")==0){
-			if(i+1==argc) {
+	for (int i = 1; i < argc; i++)
+	{
+		if (strcmp(argv[i], "-root") == 0)
+		{
+			if (i + 1 == argc)
+			{
 				log_warn("need specify root argument!");
 				continue;
 			}
-			server_rc.root_dir=argv[i+1];
+			// server_rc.root_dir=argv[i+1];
+			server_rc.root_dir = (char *)malloc(PATH_MAX);
+			realpath(argv[i + 1], server_rc.root_dir);
 		}
-		if(strcmp(argv[i],"-port")==0){
-			if(i+1==argc) {
+		if (strcmp(argv[i], "-port") == 0)
+		{
+			if (i + 1 == argc)
+			{
 				log_warn("need specify port argument!");
 				continue;
 			}
-			sscanf(argv[i+1],"%d",&server_rc.port);
+			sscanf(argv[i + 1], "%d", &server_rc.port);
 		}
 	}
 
@@ -177,43 +187,6 @@ int main(int argc, char **argv)
 			}
 		}
 
-		// LIST RETR STOR need process again
-		for (int i = 0; i <= max_client_id; i++)
-		{
-			struct Client *client = &server_rc.clients[i];
-			if (client->socket_fd < 0)
-			{
-				continue;
-			}
-
-			if (client->cmd_response != NULL)
-			{
-				continue;
-			}
-
-			if (client->command_status != IDLE)
-			{
-				// process again
-				time_t now = time(NULL);
-				if (client->data_conn == NULL)
-				{
-					FD_SET(client->socket_fd, &server_rc.all_wset);
-					client->cmd_response = make_response(425, "No data connection established\r\n");
-					client->command_status = IDLE;
-					continue;
-				}
-				if (now - client->last_check_time >= 10)
-				{
-					if (!check_data_conn(client))
-					{
-						FD_SET(client->socket_fd, &server_rc.all_wset);
-						client->cmd_response = make_response(425, "No data connection established\r\n");
-						client->command_status = IDLE;
-					}
-				}
-			}
-		}
-
 		// Check read socket
 		rset = server_rc.all_rset;
 		wset = server_rc.all_wset;
@@ -256,7 +229,7 @@ int main(int argc, char **argv)
 			if (clifd > server_rc.maxfd)
 			{
 				server_rc.maxfd = clifd;
-				log_info("set maxfd %d",server_rc.maxfd);
+				log_info("set maxfd %d", server_rc.maxfd);
 			}
 			if (i > max_client_id)
 			{
@@ -302,7 +275,7 @@ int main(int argc, char **argv)
 					if (server_rc.maxfd == clifd)
 					{
 						server_rc.maxfd -= 1;
-						log_info("set maxfd %d",server_rc.maxfd);
+						log_info("set maxfd %d", server_rc.maxfd);
 					}
 					close(clifd);
 				}
@@ -354,12 +327,73 @@ int main(int argc, char **argv)
 						if (server_rc.maxfd == clifd)
 						{
 							server_rc.maxfd -= 1;
-							log_info("set maxfd %d",server_rc.maxfd);
+							log_info("set maxfd %d", server_rc.maxfd);
 						}
 						close(clifd);
 					}
 					free(cmd_response->message);
 					free(cmd_response);
+				}
+			}
+		}
+
+		log_info("check clients LIST RETR PORT again");
+		// LIST RETR STOR need process again
+		for (int i = 0; i <= max_client_id; i++)
+		{
+			struct Client *client = &server_rc.clients[i];
+			if (client->socket_fd < 0)
+			{
+				continue;
+			}
+
+			if (client->cmd_response != NULL)
+			{
+				continue;
+			}
+
+			if (client->command_status != IDLE)
+			{
+				// process again
+				time_t now = time(NULL);
+				if (client->data_conn == NULL)
+				{
+					FD_SET(client->socket_fd, &server_rc.all_wset);
+					client->cmd_response = make_response(425, "No data connection established\r\n");
+					client->command_status = IDLE;
+					continue;
+				}
+				struct Data_Conn *data_conn = client->data_conn;
+				// PASV　
+				if (data_conn->mode == PASV)
+				{
+					if (now - client->last_check_time >= 10)
+					{
+						if (!check_data_conn(client))
+						{
+							FD_SET(client->socket_fd, &server_rc.all_wset);
+							client->cmd_response = make_response(425, "No data connection established\r\n");
+							client->command_status = IDLE;
+							clear_data_conn(client, &server_rc);
+						}
+						continue;
+					}
+				}
+				// PORT connection refused
+				if (data_conn->mode == PORT)
+				{
+					int error = 0;
+					socklen_t len = sizeof(error);
+					getsockopt(client->data_conn->clifd, SOL_SOCKET, SO_ERROR, &error, &len);
+					if (error != 0)
+					{
+						log_error("%s", strerror(error));
+						FD_SET(client->socket_fd, &server_rc.all_wset);
+						client->cmd_response = make_response(425, "No data connection established\r\n");
+						client->command_status = IDLE;
+						clear_data_conn(client, &server_rc);
+						continue;
+					}
 				}
 			}
 		}
@@ -383,16 +417,18 @@ int main(int argc, char **argv)
 
 			if (data_conn->mode == PORT)
 			{
-				int error = 0;
-				socklen_t len = sizeof(error);
-				getsockopt(data_conn->clifd, SOL_SOCKET, SO_ERROR, &error, &len);
-				if (error != 0)
-				{
-					log_error("%s", strerror(error));
+				// int error = 0;
+				// socklen_t len = sizeof(error);
 
-					clear_data_conn(client, &server_rc);
-					continue;
-				}
+				// PORT connection refused
+				// getsockopt(data_conn->clifd, SOL_SOCKET, SO_ERROR, &error, &len);
+				// if (error != 0)
+				// {
+				// 	log_error("%s", strerror(error));
+
+				// 	clear_data_conn(client, &server_rc);
+				// 	continue;
+				// }
 
 				if (FD_ISSET(data_conn->clifd, &wset))
 				{
@@ -420,7 +456,7 @@ int main(int argc, char **argv)
 					if (server_rc.maxfd < data_conn->clifd)
 					{
 						server_rc.maxfd = data_conn->clifd;
-						log_info("set maxfd %d",server_rc.maxfd);
+						log_info("set maxfd %d", server_rc.maxfd);
 					}
 
 					if (client->command_status == RETR || client->command_status == LIST)
@@ -428,7 +464,7 @@ int main(int argc, char **argv)
 						FD_SET(data_conn->clifd, &server_rc.all_wset);
 						continue;
 					}
-					if (client->command_status == STOR || client->command_status==APPE)
+					if (client->command_status == STOR || client->command_status == APPE)
 					{
 						FD_SET(data_conn->clifd, &server_rc.all_rset);
 						continue;

@@ -1,6 +1,10 @@
-# Ftp-Server
+## 运行
 
-# TODO
-- [x] RETR
-- [x] APPE
-- [x] fix cmd options
+```bash
+# build server
+make
+
+# start server
+sudo ./server -root /tmp -port 21
+```
+

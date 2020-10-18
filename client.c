@@ -41,7 +41,9 @@ int client_add(struct Server_RC *server_rc, int socket_fd)
     for (i = 0; i < clients_size; i++)
     {
         if (server_rc->clients[i].socket_fd == -1)
-        {
+        {   
+            server_rc->clients[i] = DEFAULT_CLIENT;
+            server_rc->clients[i].last_check_time=time(NULL);
             server_rc->clients[i].socket_fd = socket_fd;
             return i;
         }

@@ -10,7 +10,6 @@ char *list_file(char *name,char* dir) //Print the - l parameter in the correspon
     int buf_length = sizeof(char) * MAXLINE;
     char *buf = (char *)malloc(buf_length);
     bzero(buf, buf_length);
-
     struct stat stat_buf;
 
     int path_length=strlen(name)+strlen(dir)+2;
@@ -100,11 +99,28 @@ char *list_file(char *name,char* dir) //Print the - l parameter in the correspon
 
     base += sprintf(buf + base, "\n");
 
+    free(path);
     return buf;
 }
 
 char *list_dir(char *path) //This function is used to process directories
 {
+    log_info("list dir %s",path);
+
+    struct stat stat_buf;
+    lstat(path,&stat_buf);
+
+    if(!S_ISDIR(stat_buf.st_mode)){
+        char *dirc = strdup(path);
+        char *basec = strdup(path);
+        char* name=basename(dirc);
+        char* dir=dirname(basec);
+        char *tmp_buf = list_file(name,dir);
+        // free(name);
+        // free(dir);
+        return tmp_buf;
+    }
+
     DIR *dir;           //Accept the file descriptor returned by opendir
     struct dirent *ptr; //Structures that accept readdir returns
     int count = 0;
@@ -180,6 +196,6 @@ char *list_dir(char *path) //This function is used to process directories
 
 // int main()
 // {
-//     char *path = "/tmp";
+//     char *path = "/tmp/pipe_client_request_237_1";
 //     printf("%s\n", list_dir(path));
 // }

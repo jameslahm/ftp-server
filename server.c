@@ -308,7 +308,7 @@ int main(int argc, char **argv)
 					{
 						log_error("response cmd: \n%s", strerror(errno));
 					}
-					if (client->command_status != IDLE)
+					if (client->command_status != IDLE && client->cmd_response->code==226)
 					{
 						if (client->data_conn == NULL)
 						{

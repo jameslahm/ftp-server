@@ -2,9 +2,9 @@
 
 char *normalize_path(struct Client *client, char *dir)
 {
-    int path_length=strlen(dir) + strlen(client->current_dir) + 2;
+    int path_length = strlen(dir) + strlen(client->current_dir) + 2;
     char *path = (char *)malloc(path_length);
-    bzero(path,path_length);
+    bzero(path, path_length);
     if (dir[0] == '/')
     {
         realpath(dir, path);
@@ -12,7 +12,7 @@ char *normalize_path(struct Client *client, char *dir)
     else
     {
         char *tmp_path = (char *)malloc(path_length);
-        bzero(tmp_path,path_length);
+        bzero(tmp_path, path_length);
         sprintf(tmp_path, "%s/%s", client->current_dir, dir);
         realpath(tmp_path, path);
     }
@@ -188,7 +188,7 @@ char *stringify_address(struct sockaddr_in *addr)
     int port_1 = port / 256;
     int port_2 = port % 256;
     char *buf = (char *)malloc(MAXLINE);
-    bzero(buf,MAXLINE);
+    bzero(buf, MAXLINE);
     snprintf(buf, MAXLINE, "%s,%d,%d", ip, port_1, port_2);
     free(ip);
     return buf;
@@ -308,6 +308,8 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
 
     log_info("command type: %s", cmd->type);
     log_info("command args: %s", cmd->args);
+
+    client->command_status = IDLE;
 
     // handle User command
     if (strcmp(cmd->type, "USER") == 0)
@@ -451,12 +453,12 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         getsockname(data_conn->listenfd, (struct sockaddr *)data_conn->addr, &sockaddr_in_length);
 
         log_info("stringify address");
-        struct sockaddr_in tmp_address=*data_conn->addr;
-        inet_aton(server_rc->ip,&tmp_address.sin_addr);
+        struct sockaddr_in tmp_address = *data_conn->addr;
+        inet_aton(server_rc->ip, &tmp_address.sin_addr);
         // TODO: better ip stringify
-        char *address=stringify_address(&tmp_address);
+        char *address = stringify_address(&tmp_address);
         char *buf = (char *)malloc(MAXLINE);
-        bzero(buf,MAXLINE);
+        bzero(buf, MAXLINE);
         snprintf(buf, MAXLINE, "Entering Passive Mode (%s)\r\n", address);
         FD_SET(client->socket_fd, &server_rc->all_wset);
         struct Command_Response *cmd_response = make_response(227, buf);
@@ -495,8 +497,8 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         // char *filename = (char *)(malloc(filename_length));
         // bzero(filename, filename_length);
         // snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
-        char *filename=normalize_path(client,cmd->args);
-        log_info("filename: %s",filename);
+        char *filename = normalize_path(client, cmd->args);
+        log_info("filename: %s", filename);
 
         int fd = open(filename, O_RDONLY);
         if (fd == -1)
@@ -510,7 +512,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         bzero(acb, sizeof(*acb));
 
         char *buf = (char *)malloc(BUFSIZ + 1);
-        bzero(buf,BUFSIZ+1);
+        bzero(buf, BUFSIZ + 1);
         client->data_conn->buf = buf;
         acb->aio_buf = client->data_conn->buf;
 
@@ -554,8 +556,8 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         // char *filename = (char *)(malloc(filename_length));
         // bzero(filename, filename_length);
         // snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
-        char *filename=normalize_path(client,cmd->args);
-        log_info("filename: %s",filename);
+        char *filename = normalize_path(client, cmd->args);
+        log_info("filename: %s", filename);
 
         int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO);
         if (fd == -1)
@@ -569,7 +571,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         bzero(acb, sizeof(*acb));
 
         char *buf = (char *)malloc(BUFSIZ + 1);
-        bzero(buf,BUFSIZ+1);
+        bzero(buf, BUFSIZ + 1);
         client->data_conn->buf = buf;
         acb->aio_buf = client->data_conn->buf;
         acb->aio_nbytes = 0;
@@ -601,13 +603,12 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         // char *filename = (char *)(malloc(filename_length));
         // bzero(filename, filename_length);
         // snprintf(filename, filename_length, "%s/%s", client->current_dir, cmd->args);
-        char *filename=normalize_path(client,cmd->args);
-        log_info("filename: %s",filename);
+        char *filename = normalize_path(client, cmd->args);
+        log_info("filename: %s", filename);
 
         int fd = open(filename, O_WRONLY | O_APPEND | O_CREAT, S_IRWXO | S_IRWXG | S_IRWXO);
         if (fd == -1)
         {
-            FD_SET(client->socket_fd, &server_rc->all_wset);
             clear_data_conn(client, server_rc);
             return make_response(550, "Can't open file\r\n");
         }
@@ -616,7 +617,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         bzero(acb, sizeof(*acb));
 
         char *buf = (char *)malloc(BUFSIZ + 1);
-        bzero(buf,BUFSIZ+1);
+        bzero(buf, BUFSIZ + 1);
         client->data_conn->buf = buf;
         acb->aio_buf = client->data_conn->buf;
         acb->aio_nbytes = 0;
@@ -655,7 +656,7 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         if (res == 0)
         {
             char *buf = (char *)malloc(MAXLINE);
-            bzero(buf,MAXLINE);
+            bzero(buf, MAXLINE);
             sprintf(buf, "created successfully!\r\n");
 
             struct Command_Response *cmd_response = make_response(257, buf);
@@ -700,13 +701,32 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
     }
     if (strcmp(cmd->type, "LIST") == 0)
     {
-        client->command_status = LIST;
+        FD_SET(client->socket_fd, &server_rc->all_wset);
         if (client->data_conn == NULL)
         {
+            client->command_status = LIST;
             return make_response(150, "Opening Binary mode data connection\r\n");
         }
 
-        char *buf = list_dir(client->current_dir);
+        char *buf;
+        if (strlen(cmd->args) == 0)
+        {
+            buf = list_dir(client->current_dir);
+        }
+        else
+        {
+            char *path = normalize_path(client, cmd->args);
+            int res = access(path, F_OK);
+            if (res == -1)
+            {
+                clear_data_conn(client, server_rc);
+                free(path);
+                return make_response(550, "LIST failure\r\n");
+            }
+            buf = list_dir(path);
+            free(path);
+        }
+        client->command_status = LIST;
         log_info("set command status %d", client->command_status);
         client->data_conn->buf = buf;
         return init_data_conn(client, server_rc);

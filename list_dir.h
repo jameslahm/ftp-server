@@ -11,6 +11,7 @@
 #include <pwd.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <libgen.h>
 
 #include "config.h"
 

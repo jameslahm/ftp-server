@@ -112,6 +112,13 @@ int main(int argc, char **argv)
 			// server_rc.root_dir=argv[i+1];
 			server_rc.root_dir = (char *)malloc(PATH_MAX);
 			realpath(argv[i + 1], server_rc.root_dir);
+
+			int res = access(server_rc.root_dir, F_OK);
+            if (res == -1)
+            {
+                log_error("can't open dir");
+				return 1;
+			}
 		}
 		if (strcmp(argv[i], "-port") == 0)
 		{

@@ -364,6 +364,30 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         return make_multiline_response(230, message);
     }
 
+    if (strcmp(cmd->type, "QUIT") == 0)
+    {
+        FD_SET(client->socket_fd, &server_rc->all_wset);
+        if (strlen(cmd->args) != 0)
+        {
+            return make_response(501, "Parameter error\r\n");
+        }
+        clear_data_conn(client, server_rc);
+        // FD_SET(client->socket_fd, &server_rc->all_rset);
+        return make_response(221, "Goodbye.\r\n");
+    }
+    if (strcmp(cmd->type, "ABOR") == 0)
+    {
+        FD_SET(client->socket_fd, &server_rc->all_wset);
+        if (strlen(cmd->args) != 0)
+        {
+            return make_response(501, "Parameter error\r\n");
+        }
+        clear_data_conn(client, server_rc);
+        // FD_SET(client->socket_fd, &server_rc->all_rset);
+        return make_response(221, "Goodbye.\r\n");
+    }
+
+
     struct User *user = client->user;
     if (user == NULL || user->password == NULL)
     {
@@ -632,18 +656,6 @@ struct Command_Response *handle_command(struct Client *client, char *buf, struct
         client->command_status = APPE;
         log_info("set command status %d", client->command_status);
         return init_data_conn(client, server_rc);
-    }
-
-    if (strcmp(cmd->type, "QUIT") == 0)
-    {
-        FD_SET(client->socket_fd, &server_rc->all_wset);
-        if (strlen(cmd->args) != 0)
-        {
-            return make_response(501, "Parameter error\r\n");
-        }
-        clear_data_conn(client, server_rc);
-        // FD_SET(client->socket_fd, &server_rc->all_rset);
-        return make_response(221, "Goodbye.\r\n");
     }
 
     if (strcmp(cmd->type, "MKD") == 0)

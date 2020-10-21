@@ -114,9 +114,9 @@ int main(int argc, char **argv)
 			realpath(argv[i + 1], server_rc.root_dir);
 
 			int res = access(server_rc.root_dir, F_OK);
-            if (res == -1)
-            {
-                log_error("can't open dir");
+			if (res == -1)
+			{
+				log_error("can't open dir");
 				return 1;
 			}
 		}

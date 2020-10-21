@@ -60,7 +60,7 @@ int main(int argc, char **argv)
 	server_rc.ip = get_real_ip();
 
 	// buf
-	char buf[MAXLINE];
+	char buf[MAXLINE+1];
 
 	// get options include port and root dir
 	// struct option long_options[] =

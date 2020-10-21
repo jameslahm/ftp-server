@@ -50,7 +50,7 @@ struct Data_Conn
     enum Data_Conn_Mode mode;
     struct aiocb *acb;
 
-    char* buf;
+    char *buf;
 };
 
 // cmd_response
@@ -75,6 +75,8 @@ struct Client
     int offset;
 
     enum Command_Status command_status;
+
+    char *tmp_request_buf;
 };
 
 extern struct User DEFAULT_USER;

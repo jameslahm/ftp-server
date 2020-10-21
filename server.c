@@ -60,7 +60,7 @@ int main(int argc, char **argv)
 	server_rc.ip = get_real_ip();
 
 	// buf
-	char buf[MAXLINE+1];
+	char buf[MAXLINE + 1] = {0};
 
 	// get options include port and root dir
 	// struct option long_options[] =
@@ -261,6 +261,7 @@ int main(int argc, char **argv)
 			if (FD_ISSET(clifd, &rset))
 			{
 				int nread;
+				bzero(buf, MAXLINE + 1);
 				if ((nread = read(clifd, buf, MAXLINE)) < 0)
 				{
 					printf("Error read: %d", clifd);
@@ -281,15 +282,42 @@ int main(int argc, char **argv)
 				}
 				else
 				{
-					buf[nread] = '\0';
-					log_info("handle command %s", buf);
-					if (client->cmd_response != NULL || client->command_status != IDLE)
+					int length_1 = client->tmp_request_buf == NULL ? 0 : strlen(client->tmp_request_buf);
+					int length_2 = nread;
+					char *tmp_buf = (char *)malloc(length_1 + length_2 + 1);
+					bzero(tmp_buf, length_1 + length_2 + 1);
+					if (client->tmp_request_buf == NULL)
 					{
-						log_info("shield command %s", buf);
+						sprintf(tmp_buf, "%s", buf);
+						client->tmp_request_buf = tmp_buf;
+					}
+					else
+					{
+						sprintf(tmp_buf, "%s%s", client->tmp_request_buf, buf);
+						free(client->tmp_request_buf);
+						client->tmp_request_buf = tmp_buf;
+					}
+
+					log_info("tmp_request_buf %s", client->tmp_request_buf);
+
+					int length = length_1 + length_2;
+					if (length < 2 || (client->tmp_request_buf[length - 1] != '\n' || client->tmp_request_buf[length - 2] != '\r'))
+					{
 						continue;
 					}
-					struct Command_Response *cmd_response = handle_command(client, buf, &server_rc);
+
+					log_info("handle command %s", client->tmp_request_buf);
+					if (client->cmd_response != NULL || client->command_status != IDLE)
+					{
+						log_info("shield command %s", client->tmp_request_buf);
+						free(client->tmp_request_buf);
+						client->tmp_request_buf = NULL;
+						continue;
+					}
+					struct Command_Response *cmd_response = handle_command(client, client->tmp_request_buf, &server_rc);
 					client->cmd_response = cmd_response;
+					free(client->tmp_request_buf);
+					client->tmp_request_buf = NULL;
 				}
 			}
 
@@ -308,7 +336,7 @@ int main(int argc, char **argv)
 					{
 						log_error("response cmd: \n%s", strerror(errno));
 					}
-					if (client->command_status != IDLE && client->cmd_response->code==226)
+					if (client->command_status != IDLE && client->cmd_response->code == 226)
 					{
 						if (client->data_conn == NULL)
 						{
